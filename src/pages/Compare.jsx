@@ -12,6 +12,12 @@ export default function Compare() {
             const parts = snap.docs.map(d => ({ id: d.id, ...d.data() }))
                 .sort((a, b) => (b.score || 0) - (a.score || 0));
             setParticipants(parts);
+
+            // Auto-update selected
+            setSelected(prev => prev.map(s => {
+                const updated = parts.find(p => p.id === s.id);
+                return updated || s;
+            }));
         });
         return () => unsub();
     }, []);
@@ -24,24 +30,23 @@ export default function Compare() {
         }
     };
 
-    const getBarWidth = (val, max) => max > 0 ? Math.round((val / max) * 100) : 0;
-
-    const stats = [
-        { key: 'wpm', label: 'WPM', icon: <FiZap size={14} />, color: 'var(--accent-primary)' },
-        { key: 'accuracy', label: 'Accuracy %', icon: <FiTarget size={14} />, color: 'var(--accent-success)' },
-        { key: 'score', label: 'Score', icon: <FiAward size={14} />, color: 'var(--rank-gold)' },
-        { key: 'mistakes', label: 'Mistakes', icon: <FiHash size={14} />, color: 'var(--accent-danger)', lower: true },
-        { key: 'backspaceCount', label: 'Backspaces', icon: <FiDelete size={14} />, color: 'var(--text-muted)', lower: true },
-        { key: 'totalTyped', label: 'Keystrokes', icon: <FiBarChart2 size={14} />, color: 'var(--accent-secondary)' },
-    ];
-
     const colors = ['#2563eb', '#7c3aed', '#059669', '#d97706'];
+    const statFields = [
+        { key: 'wpm', label: 'WPM', suffix: '' },
+        { key: 'accuracy', label: 'Accuracy', suffix: '%' },
+        { key: 'score', label: 'Score', suffix: '' },
+        { key: 'mistakes', label: 'Mistakes', suffix: '' },
+        { key: 'backspaceCount', label: 'Backspaces', suffix: '' },
+        { key: 'totalTyped', label: 'Keystrokes', suffix: '' },
+        { key: 'correctChars', label: 'Correct Chars', suffix: '' },
+        { key: 'progress', label: 'Progress', suffix: '%' },
+    ];
 
     return (
         <div className="page-container fade-in">
             <div className="page-header">
                 <h1 className="page-title"><FiBarChart2 style={{ marginRight: '8px' }} /> Compare Students</h1>
-                <p className="page-subtitle">Select up to 4 students to compare their live performance side-by-side</p>
+                <p className="page-subtitle">Select up to 4 students for a professional head-to-head comparison</p>
             </div>
 
             {/* Student Selector */}
@@ -53,14 +58,19 @@ export default function Compare() {
                     <p style={{ color: 'var(--text-muted)', fontSize: '14px' }}>No students in active competition yet.</p>
                 ) : (
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                        {participants.map((p, i) => {
-                            const isSelected = selected.find(s => s.id === p.id);
+                        {participants.map(p => {
+                            const idx = selected.findIndex(s => s.id === p.id);
+                            const isSelected = idx >= 0;
                             return (
                                 <button key={p.id} onClick={() => toggleSelect(p)}
-                                    className={`btn ${isSelected ? 'btn-primary' : 'btn-secondary'}`}
-                                    style={{ fontSize: '13px', padding: '8px 14px' }}>
-                                    <FiUser size={13} />
-                                    {p.name}
+                                    style={{
+                                        padding: '8px 16px', borderRadius: 'var(--radius-full)', fontSize: '13px', fontWeight: 600,
+                                        border: `2px solid ${isSelected ? colors[idx] : 'var(--bg-glass-border)'}`,
+                                        background: isSelected ? `${colors[idx]}15` : 'var(--bg-glass)',
+                                        color: isSelected ? colors[idx] : 'var(--text-secondary)',
+                                        cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', transition: 'all 0.2s ease',
+                                    }}>
+                                    <FiUser size={13} /> {p.name}
                                     {isSelected && <FiX size={13} />}
                                 </button>
                             );
@@ -69,66 +79,63 @@ export default function Compare() {
                 )}
             </div>
 
-            {/* Comparison */}
+            {/* Professional Table Comparison */}
             {selected.length >= 2 && (
-                <div className="glass-card">
-                    <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, marginBottom: '24px' }}>
-                        📊 Live Comparison
-                    </h3>
-
-                    {stats.map(stat => {
-                        const maxVal = Math.max(...selected.map(s => s[stat.key] || 0), 1);
-                        return (
-                            <div key={stat.key} style={{ marginBottom: '24px' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
-                                    {stat.icon}
-                                    <span style={{ fontWeight: 600, fontSize: '14px' }}>{stat.label}</span>
-                                </div>
-                                {selected.map((s, i) => (
-                                    <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '6px' }}>
-                                        <span style={{ width: '80px', fontSize: '12px', fontWeight: 600, color: colors[i], textAlign: 'right', flexShrink: 0 }}>
-                                            {s.name}
-                                        </span>
-                                        <div style={{ flex: 1, height: '24px', background: 'var(--bg-input)', borderRadius: 'var(--radius-sm)', overflow: 'hidden', position: 'relative' }}>
-                                            <div style={{
-                                                width: `${getBarWidth(s[stat.key] || 0, maxVal)}%`,
-                                                height: '100%', background: colors[i], borderRadius: 'var(--radius-sm)',
-                                                transition: 'width 0.5s ease', minWidth: '2px',
-                                            }} />
-                                        </div>
-                                        <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '14px', width: '50px', color: colors[i] }}>
-                                            {s[stat.key] || 0}{stat.key === 'accuracy' ? '%' : ''}
-                                        </span>
-                                    </div>
-                                ))}
-                            </div>
-                        );
-                    })}
-
-                    {/* Summary Table */}
-                    <div style={{ marginTop: '24px', overflowX: 'auto' }}>
+                <div className="glass-card" style={{ padding: 0, overflow: 'hidden' }}>
+                    <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--bg-glass-border)' }}>
+                        <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700 }}>📊 Head-to-Head Comparison (Live)</h3>
+                    </div>
+                    <div style={{ overflowX: 'auto' }}>
                         <table className="data-table">
                             <thead>
                                 <tr>
-                                    <th>Student</th>
-                                    <th>WPM</th>
-                                    <th>Accuracy</th>
-                                    <th>Score</th>
-                                    <th>Mistakes</th>
-                                    <th>Progress</th>
-                                    <th>Status</th>
+                                    <th style={{ textAlign: 'left', minWidth: '120px' }}>Metric</th>
+                                    {selected.map((s, i) => (
+                                        <th key={s.id} style={{ color: colors[i], minWidth: '100px' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}>
+                                                <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: colors[i] }} />
+                                                {s.name}
+                                            </div>
+                                        </th>
+                                    ))}
+                                    <th style={{ minWidth: '80px' }}>Best</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {selected.map((s, i) => (
-                                    <tr key={s.id}>
-                                        <td style={{ fontWeight: 600, color: colors[i] }}>{s.name}</td>
-                                        <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{s.wpm || 0}</td>
-                                        <td style={{ fontFamily: 'var(--font-mono)' }}>{s.accuracy || 0}%</td>
-                                        <td style={{ fontFamily: 'var(--font-display)', fontWeight: 800, color: 'var(--rank-gold)' }}>{s.score || 0}</td>
-                                        <td style={{ color: 'var(--accent-danger)' }}>{s.mistakes || 0}</td>
-                                        <td>{s.progress || 0}%</td>
-                                        <td>
+                                {statFields.map(sf => {
+                                    const values = selected.map(s => s[sf.key] || 0);
+                                    const bestVal = sf.key === 'mistakes' || sf.key === 'backspaceCount'
+                                        ? Math.min(...values)
+                                        : Math.max(...values);
+                                    return (
+                                        <tr key={sf.key}>
+                                            <td style={{ fontWeight: 600, fontSize: '13px' }}>{sf.label}</td>
+                                            {selected.map((s, i) => {
+                                                const val = s[sf.key] || 0;
+                                                const isBest = val === bestVal;
+                                                return (
+                                                    <td key={s.id} style={{
+                                                        fontFamily: 'var(--font-mono)', fontWeight: isBest ? 800 : 500, fontSize: '15px',
+                                                        color: isBest ? colors[i] : 'var(--text-secondary)',
+                                                        background: isBest ? `${colors[i]}08` : undefined,
+                                                        textAlign: 'center',
+                                                    }}>
+                                                        {val}{sf.suffix}
+                                                        {isBest && ' ⭐'}
+                                                    </td>
+                                                );
+                                            })}
+                                            <td style={{ textAlign: 'center', fontSize: '12px', color: 'var(--text-muted)' }}>
+                                                {selected[values.indexOf(bestVal)]?.name}
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                                {/* Status Row */}
+                                <tr>
+                                    <td style={{ fontWeight: 600, fontSize: '13px' }}>Status</td>
+                                    {selected.map((s, i) => (
+                                        <td key={s.id} style={{ textAlign: 'center' }}>
                                             <span style={{
                                                 fontSize: '11px', fontWeight: 600, padding: '3px 8px', borderRadius: 'var(--radius-full)',
                                                 background: s.finished ? 'rgba(5,150,105,0.1)' : 'rgba(37,99,235,0.1)',
@@ -137,8 +144,9 @@ export default function Compare() {
                                                 {s.finished ? '✅ Done' : '⌨️ Typing'}
                                             </span>
                                         </td>
-                                    </tr>
-                                ))}
+                                    ))}
+                                    <td />
+                                </tr>
                             </tbody>
                         </table>
                     </div>
@@ -147,7 +155,7 @@ export default function Compare() {
 
             {selected.length === 1 && (
                 <div className="glass-card" style={{ textAlign: 'center', padding: '40px' }}>
-                    <p style={{ color: 'var(--text-muted)', fontSize: '15px' }}>Select at least 2 students to compare</p>
+                    <p style={{ color: 'var(--text-muted)' }}>Select at least 2 students to compare</p>
                 </div>
             )}
 
@@ -155,9 +163,7 @@ export default function Compare() {
                 <div className="glass-card" style={{ textAlign: 'center', padding: '60px' }}>
                     <div style={{ fontSize: '48px', marginBottom: '16px' }}>📊</div>
                     <h2 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, marginBottom: '8px' }}>Select Students Above</h2>
-                    <p style={{ color: 'var(--text-secondary)', fontSize: '14px' }}>
-                        Click on student names to add them to comparison. You can compare up to 4 students side-by-side with live data.
-                    </p>
+                    <p style={{ color: 'var(--text-secondary)', fontSize: '14px' }}>Click on student names to compare their performance side-by-side. Data updates live!</p>
                 </div>
             )}
         </div>

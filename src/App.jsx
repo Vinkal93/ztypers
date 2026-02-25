@@ -13,6 +13,7 @@ import Results from './pages/Results';
 import Practice from './pages/Practice';
 import Playground from './pages/Playground';
 import LiveViewer from './pages/LiveViewer';
+import Winners from './pages/Winners';
 import About from './pages/About';
 import AdminDashboard from './pages/admin/Dashboard';
 import AdminCreate from './pages/admin/CreateCompetition';
@@ -47,6 +48,7 @@ export default function App() {
         <Route path="/leaderboard/:compId" element={<Leaderboard />} />
         <Route path="/results/:compId" element={<Results />} />
         <Route path="/compare" element={<Compare />} />
+        <Route path="/winners" element={<Winners />} />
         <Route path="/about" element={<About />} />
 
         {/* Admin auth */}

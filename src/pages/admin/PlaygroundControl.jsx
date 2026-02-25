@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { doc, setDoc, onSnapshot, collection, getDocs, deleteDoc } from 'firebase/firestore';
+import { doc, setDoc, onSnapshot, collection, getDocs, deleteDoc, addDoc } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
-import { paragraphs } from '../../constants/theme';
-import { FiArrowLeft, FiPlay, FiSquare, FiClock, FiDelete, FiFileText, FiUsers, FiRefreshCw, FiAward, FiRadio } from 'react-icons/fi';
+import { getRandomParagraph, easyParagraphs, mediumParagraphs, hardParagraphs } from '../../constants/theme';
+import { FiArrowLeft, FiPlay, FiSquare, FiClock, FiDelete, FiFileText, FiUsers, FiRefreshCw, FiAward, FiRadio, FiDollarSign } from 'react-icons/fi';
 
 export default function PlaygroundControl() {
     const navigate = useNavigate();
@@ -14,20 +14,17 @@ export default function PlaygroundControl() {
         duration: 60,
         countdownSeconds: 10,
         backspaceEnabled: true,
+        difficulty: 'medium',
+        prize: 0,
     });
 
-    // Listen to playground settings
     useEffect(() => {
         const unsub = onSnapshot(doc(db, 'settings', 'playground'), (snap) => {
-            if (snap.exists()) {
-                const data = snap.data();
-                setSettings(data);
-            }
+            if (snap.exists()) setSettings(snap.data());
         });
         return () => unsub();
     }, []);
 
-    // Listen to participants
     useEffect(() => {
         const unsub = onSnapshot(collection(db, 'playground_participants'), (snap) => {
             const parts = snap.docs.map(d => ({ id: d.id, ...d.data() }))
@@ -48,26 +45,33 @@ export default function PlaygroundControl() {
     };
 
     const setWaiting = async () => {
+        const para = form.paragraph || getRandomParagraph(form.difficulty);
         await updateSettings({
             ...form,
-            paragraph: form.paragraph || paragraphs[Math.floor(Math.random() * paragraphs.length)],
+            paragraph: para,
             status: 'waiting',
             updatedAt: new Date().toISOString(),
         });
     };
 
     const startCountdown = async () => {
-        await updateSettings({ status: 'countdown', countdownSeconds: form.countdownSeconds });
-        // After countdown finishes, set to active
+        const para = form.paragraph || getRandomParagraph(form.difficulty);
+        await updateSettings({
+            ...form,
+            paragraph: para,
+            status: 'countdown',
+            countdownSeconds: form.countdownSeconds,
+        });
         setTimeout(async () => {
             await updateSettings({ status: 'active', startedAt: new Date().toISOString() });
         }, (form.countdownSeconds || 10) * 1000);
     };
 
     const startNow = async () => {
+        const para = form.paragraph || getRandomParagraph(form.difficulty);
         await updateSettings({
             ...form,
-            paragraph: form.paragraph || paragraphs[Math.floor(Math.random() * paragraphs.length)],
+            paragraph: para,
             status: 'active',
             startedAt: new Date().toISOString(),
             countdownSeconds: 3,
@@ -76,26 +80,46 @@ export default function PlaygroundControl() {
 
     const stopCompetition = async () => {
         await updateSettings({ status: 'ended', endedAt: new Date().toISOString() });
+        // Save winner to winners collection
+        if (participants.length > 0) {
+            const winner = participants[0];
+            try {
+                await addDoc(collection(db, 'winners'), {
+                    name: winner.name,
+                    studentId: winner.studentId || winner.id,
+                    wpm: winner.wpm || 0,
+                    accuracy: winner.accuracy || 0,
+                    score: winner.score || 0,
+                    mistakes: winner.mistakes || 0,
+                    prize: form.prize || 0,
+                    difficulty: form.difficulty || 'medium',
+                    duration: form.duration || 60,
+                    totalParticipants: participants.length,
+                    date: new Date().toISOString(),
+                    // Top 3
+                    runnerUp: participants[1] ? { name: participants[1].name, wpm: participants[1].wpm, score: participants[1].score } : null,
+                    thirdPlace: participants[2] ? { name: participants[2].name, wpm: participants[2].wpm, score: participants[2].score } : null,
+                });
+            } catch (err) {
+                console.error('Error saving winner:', err);
+            }
+        }
     };
 
     const resetPlayground = async () => {
-        // Clear all participants
         const snap = await getDocs(collection(db, 'playground_participants'));
         for (const d of snap.docs) {
             await deleteDoc(doc(db, 'playground_participants', d.id));
         }
         await updateSettings({
-            status: 'waiting',
-            paragraph: '',
-            duration: 60,
-            countdownSeconds: 10,
-            backspaceEnabled: true,
+            status: 'waiting', paragraph: '', duration: 60, countdownSeconds: 10,
+            backspaceEnabled: true, difficulty: 'medium', prize: 0,
         });
-        setForm({ paragraph: '', duration: 60, countdownSeconds: 10, backspaceEnabled: true });
+        setForm({ paragraph: '', duration: 60, countdownSeconds: 10, backspaceEnabled: true, difficulty: 'medium', prize: 0 });
     };
 
     const randomParagraph = () => {
-        setForm(prev => ({ ...prev, paragraph: paragraphs[Math.floor(Math.random() * paragraphs.length)] }));
+        setForm(prev => ({ ...prev, paragraph: getRandomParagraph(prev.difficulty) }));
     };
 
     const isActive = settings?.status === 'active';
@@ -127,19 +151,15 @@ export default function PlaygroundControl() {
                         <FiUsers size={14} style={{ marginRight: '4px' }} /> {participants.length} participants
                     </span>
                 </div>
-
-                {/* Controls */}
                 <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                     {!isActive && !isCountdown && (
                         <>
-                            <button onClick={setWaiting} className="btn btn-secondary">
-                                ⏳ Set Waiting Mode
-                            </button>
+                            <button onClick={setWaiting} className="btn btn-secondary">⏳ Set Waiting Mode</button>
                             <button onClick={startCountdown} className="btn btn-primary btn-lg">
                                 <FiClock /> Start with Countdown ({form.countdownSeconds}s)
                             </button>
                             <button onClick={startNow} className="btn btn-success">
-                                <FiPlay /> Start Now (3s countdown)
+                                <FiPlay /> Start Now (3s)
                             </button>
                         </>
                     )}
@@ -148,9 +168,7 @@ export default function PlaygroundControl() {
                             <FiSquare /> Stop Competition
                         </button>
                     )}
-                    <button onClick={resetPlayground} className="btn btn-secondary">
-                        <FiRefreshCw /> Reset All
-                    </button>
+                    <button onClick={resetPlayground} className="btn btn-secondary"><FiRefreshCw /> Reset All</button>
                 </div>
             </div>
 
@@ -158,6 +176,21 @@ export default function PlaygroundControl() {
             <div className="grid-2" style={{ marginBottom: '24px' }}>
                 <div className="glass-card">
                     <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, marginBottom: '16px' }}>⚙️ Settings</h3>
+
+                    {/* Difficulty */}
+                    <div className="form-group">
+                        <label className="input-label">📚 Difficulty Level</label>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                            {['easy', 'medium', 'hard'].map(d => (
+                                <button key={d} onClick={() => setForm({ ...form, difficulty: d })}
+                                    className={`btn ${form.difficulty === d ? 'btn-primary' : 'btn-secondary'}`}
+                                    style={{ flex: 1, textTransform: 'capitalize', fontSize: '13px' }}>
+                                    {d === 'easy' ? '🟢' : d === 'medium' ? '🟡' : '🔴'} {d}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
                     <div className="form-group">
                         <label className="input-label"><FiClock style={{ marginRight: '4px' }} /> Duration</label>
                         <select className="input" value={form.duration} onChange={e => setForm({ ...form, duration: parseInt(e.target.value) })}>
@@ -170,15 +203,19 @@ export default function PlaygroundControl() {
                         </select>
                     </div>
                     <div className="form-group">
-                        <label className="input-label">⏱ Countdown (seconds before start)</label>
+                        <label className="input-label">⏱ Countdown</label>
                         <select className="input" value={form.countdownSeconds} onChange={e => setForm({ ...form, countdownSeconds: parseInt(e.target.value) })}>
                             <option value={3}>3 seconds</option>
                             <option value={5}>5 seconds</option>
                             <option value={10}>10 seconds</option>
                             <option value={15}>15 seconds</option>
                             <option value={30}>30 seconds</option>
-                            <option value={60}>1 minute</option>
                         </select>
+                    </div>
+                    <div className="form-group">
+                        <label className="input-label"><FiDollarSign style={{ marginRight: '4px' }} /> Prize Amount (₹)</label>
+                        <input type="number" className="input" placeholder="e.g., 500 (0 = no prize)"
+                            value={form.prize} onChange={e => setForm({ ...form, prize: parseInt(e.target.value) || 0 })} />
                     </div>
                     <div className="form-group">
                         <label className="input-label"><FiDelete style={{ marginRight: '4px' }} /> Backspace</label>
@@ -197,11 +234,11 @@ export default function PlaygroundControl() {
                 <div className="glass-card">
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                         <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700 }}>📝 Paragraph</h3>
-                        <button onClick={randomParagraph} className="btn btn-sm btn-secondary">🎲 Random</button>
+                        <button onClick={randomParagraph} className="btn btn-sm btn-secondary">🎲 Random ({form.difficulty})</button>
                     </div>
                     <textarea className="input" value={form.paragraph}
                         onChange={e => setForm({ ...form, paragraph: e.target.value })}
-                        placeholder="Enter the paragraph for students to type..."
+                        placeholder={`Click 🎲 Random to load a ${form.difficulty} paragraph...`}
                         style={{ minHeight: '200px' }} />
                 </div>
             </div>
@@ -225,16 +262,7 @@ export default function PlaygroundControl() {
                 ) : (
                     <table className="data-table">
                         <thead>
-                            <tr>
-                                <th>Rank</th>
-                                <th>Name</th>
-                                <th>ID</th>
-                                <th>WPM</th>
-                                <th>Accuracy</th>
-                                <th>Score</th>
-                                <th>Mistakes</th>
-                                <th>Backspaces</th>
-                            </tr>
+                            <tr><th>Rank</th><th>Name</th><th>ID</th><th>WPM</th><th>Accuracy</th><th>Score</th><th>Mistakes</th><th>Backsp</th></tr>
                         </thead>
                         <tbody>
                             {participants.map(p => (

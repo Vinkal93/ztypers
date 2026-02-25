@@ -418,15 +418,80 @@ export default function Playground() {
                 </>
             )}
 
-            {/* Finished */}
-            {finished && (
-                <div className="glass-card" style={{ textAlign: 'center', padding: '32px', marginBottom: '24px' }}>
-                    <h2 style={{ fontFamily: 'var(--font-display)', fontSize: '24px', fontWeight: 800, marginBottom: '4px' }}>
-                        🎉 Your Rank: #{myRank}
-                    </h2>
-                    <p style={{ color: 'var(--text-secondary)' }}>WPM: {wpm} • Accuracy: {accuracy}% • Score: {score}</p>
-                </div>
-            )}
+            {/* Winner Celebration */}
+            {finished && (() => {
+                const isWinner = myRank === 1;
+                const prize = settings?.prize || 0;
+                return (
+                    <div className="glass-card" style={{
+                        textAlign: 'center', padding: '40px', marginBottom: '24px',
+                        border: isWinner ? '2px solid var(--rank-gold)' : '1px solid var(--bg-glass-border)',
+                        background: isWinner ? 'linear-gradient(135deg, rgba(251,191,36,0.08), rgba(217,119,6,0.05))' : undefined,
+                        position: 'relative', overflow: 'hidden',
+                    }}>
+                        {/* Confetti background for winner */}
+                        {isWinner && (
+                            <div style={{
+                                position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, pointerEvents: 'none', opacity: 0.5,
+                                background: 'repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(251,191,36,0.05) 10px, rgba(251,191,36,0.05) 20px)',
+                            }} />
+                        )}
+
+                        <div style={{ fontSize: isWinner ? '72px' : '48px', marginBottom: '12px', position: 'relative' }}>
+                            {isWinner ? '🏆' : myRank === 2 ? '🥈' : myRank === 3 ? '🥉' : '🎉'}
+                        </div>
+
+                        <h2 style={{
+                            fontFamily: 'var(--font-display)', fontSize: isWinner ? '32px' : '24px', fontWeight: 900,
+                            background: isWinner ? 'linear-gradient(135deg, #fbbf24, #d97706)' : 'var(--accent-gradient)',
+                            WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+                            marginBottom: '8px', position: 'relative',
+                        }}>
+                            {isWinner ? `🎉 Congratulations ${student.name}! 🎉` : `You finished #${myRank}!`}
+                        </h2>
+
+                        {isWinner && (
+                            <p style={{ fontSize: '18px', fontWeight: 700, color: 'var(--rank-gold)', marginBottom: '8px', position: 'relative' }}>
+                                🥇 1st Place Winner! You are the CHAMPION! 🥇
+                            </p>
+                        )}
+
+                        <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', margin: '20px 0', flexWrap: 'wrap', position: 'relative' }}>
+                            {[
+                                { label: 'WPM', value: wpm, color: 'var(--accent-primary)' },
+                                { label: 'Accuracy', value: `${accuracy}%`, color: 'var(--accent-success)' },
+                                { label: 'Score', value: score, color: 'var(--rank-gold)' },
+                                { label: 'Rank', value: `#${myRank}`, color: 'var(--accent-secondary)' },
+                            ].map((s, i) => (
+                                <div key={i} style={{ padding: '12px 20px', background: 'var(--bg-input)', borderRadius: 'var(--radius-md)' }}>
+                                    <div style={{ fontFamily: 'var(--font-display)', fontSize: '24px', fontWeight: 800, color: s.color }}>{s.value}</div>
+                                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600 }}>{s.label}</div>
+                                </div>
+                            ))}
+                        </div>
+
+                        {isWinner && prize > 0 && (
+                            <div style={{
+                                padding: '16px 24px', borderRadius: 'var(--radius-lg)', margin: '16px auto', maxWidth: '400px',
+                                background: 'rgba(5,150,105,0.1)', border: '1px solid rgba(5,150,105,0.3)', position: 'relative',
+                            }}>
+                                <div style={{ fontSize: '24px', fontWeight: 800, color: '#059669', marginBottom: '4px' }}>
+                                    💰 Prize: ₹{prize}
+                                </div>
+                                <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: 0 }}>
+                                    🎉 Badhai ho! Aapke account me ₹{prize} 24 se 48 hours me transfer kiye jayenge.
+                                </p>
+                            </div>
+                        )}
+
+                        {isWinner && prize === 0 && (
+                            <p style={{ color: 'var(--text-muted)', fontSize: '14px', position: 'relative' }}>
+                                🏅 You dominated this competition! Great typing! 🔥
+                            </p>
+                        )}
+                    </div>
+                );
+            })()}
 
             {/* Live Rankings */}
             <div className="glass-card" style={{ padding: 0, overflow: 'hidden' }}>

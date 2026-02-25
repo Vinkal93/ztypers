@@ -25,6 +25,7 @@ export default function Navbar() {
         { to: '/live', icon: <FiRadio size={18} />, label: 'Live' },
         { to: '/leaderboard', icon: <FiAward size={18} />, label: 'Rankings' },
         { to: '/compare', icon: <FiBarChart2 size={18} />, label: 'Compare' },
+        { to: '/winners', icon: <FiAward size={18} />, label: 'Winners' },
     ];
 
     const adminLinks = [
