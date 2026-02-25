@@ -8,6 +8,7 @@ import { FiSave, FiArrowLeft, FiClock, FiDollarSign, FiFileText, FiType, FiDelet
 export default function CreateCompetition() {
     const navigate = useNavigate();
     const [loading, setLoading] = useState(false);
+    const [error, setError] = useState('');
     const [form, setForm] = useState({
         title: '',
         duration: 60,
@@ -22,6 +23,7 @@ export default function CreateCompetition() {
 
     const handleSubmit = async (e) => {
         e.preventDefault();
+        setError('');
         setLoading(true);
         try {
             const compData = {
@@ -35,11 +37,17 @@ export default function CreateCompetition() {
                 status: 'upcoming',
                 createdAt: new Date().toISOString(),
             };
-            await addDoc(collection(db, 'competitions'), compData);
+            console.log('Creating competition:', compData);
+            const docRef = await addDoc(collection(db, 'competitions'), compData);
+            console.log('Competition created with ID:', docRef.id);
             navigate('/admin');
         } catch (err) {
-            console.error('Error:', err);
-            alert('Error creating competition. Try again.');
+            console.error('Error creating competition:', err);
+            if (err.code === 'permission-denied') {
+                setError('❌ Firestore permission denied! Go to Firebase Console → Firestore → Rules and set rules to allow read/write.');
+            } else {
+                setError(`Error: ${err.message || err.code || 'Unknown error'}`);
+            }
         }
         setLoading(false);
     };
@@ -58,6 +66,16 @@ export default function CreateCompetition() {
                 <h1 className="page-title">🆕 Create Competition</h1>
                 <p className="page-subtitle">Set up a new typing challenge — when you start it, all students will compete simultaneously</p>
             </div>
+
+            {error && (
+                <div style={{
+                    padding: '14px 18px', borderRadius: 'var(--radius-md)', marginBottom: '20px',
+                    background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)',
+                    color: 'var(--accent-danger)', fontSize: '13px', fontWeight: 500, lineHeight: 1.6,
+                }}>
+                    {error}
+                </div>
+            )}
 
             <div className="glass-card" style={{ maxWidth: '700px' }}>
                 <form onSubmit={handleSubmit}>
