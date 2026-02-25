@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { collection, addDoc, getDocs, deleteDoc, doc, onSnapshot, query, orderBy } from 'firebase/firestore';
+import { collection, setDoc, getDocs, deleteDoc, doc, onSnapshot, query, orderBy } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { FiArrowLeft, FiUserPlus, FiTrash2, FiUsers, FiKey, FiCopy, FiCheck } from 'react-icons/fi';
 
@@ -14,9 +14,10 @@ export default function StudentManager() {
     const [copied, setCopied] = useState('');
 
     useEffect(() => {
-        const q = query(collection(db, 'students'), orderBy('createdAt', 'desc'));
-        const unsub = onSnapshot(q, (snap) => {
-            setStudents(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        const unsub = onSnapshot(collection(db, 'students'), (snap) => {
+            const list = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+                .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+            setStudents(list);
             setLoading(false);
         });
         return () => unsub();
@@ -39,10 +40,13 @@ export default function StudentManager() {
         e.preventDefault();
         setSaving(true);
         try {
-            await addDoc(collection(db, 'students'), {
+            const sid = (form.studentId || generateId()).toUpperCase();
+            const pwd = form.password || generatePassword();
+            // Use setDoc with studentId as document ID — this is how Playground looks it up
+            await setDoc(doc(db, 'students', sid), {
                 name: form.name,
-                studentId: form.studentId || generateId(),
-                password: form.password || generatePassword(),
+                studentId: sid,
+                password: pwd,
                 bestWPM: 0,
                 totalCompetitions: 0,
                 createdAt: new Date().toISOString(),
@@ -51,7 +55,7 @@ export default function StudentManager() {
             setShowForm(false);
         } catch (err) {
             console.error('Error:', err);
-            alert('Error adding student');
+            alert('Error adding student: ' + err.message);
         }
         setSaving(false);
     };
