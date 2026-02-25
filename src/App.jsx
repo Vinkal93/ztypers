@@ -1,10 +1,10 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
 import Navbar from './components/Navbar';
+import ScrollToTop from './components/ScrollToTop';
 import Landing from './pages/Landing';
 import Login from './pages/Login';
 import Register from './pages/Register';
-import Home from './pages/Home';
 import Compete from './pages/Compete';
 import Leaderboard from './pages/Leaderboard';
 import Profile from './pages/Profile';
@@ -34,6 +34,7 @@ export default function App() {
 
   return (
     <>
+      <ScrollToTop />
       <Navbar />
       <Routes>
         {/* Public routes */}
