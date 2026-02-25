@@ -11,8 +11,7 @@ export default function Practice() {
 
     const [paragraph, setParagraph] = useState('');
     const [duration, setDuration] = useState(60);
-    const [status, setStatus] = useState('ready'); // ready, countdown, active, finished
-    const [countdown, setCountdown] = useState(3);
+    const [status, setStatus] = useState('ready'); // ready, active, finished
 
     const [charIndex, setCharIndex] = useState(0);
     const [charStates, setCharStates] = useState([]);
@@ -27,12 +26,8 @@ export default function Practice() {
     const [mistakes, setMistakes] = useState(0);
     const [backspaceCount, setBackspaceCount] = useState(0);
     const [score, setScore] = useState(0);
-    const [keystrokeLog, setKeystrokeLog] = useState([]);
 
-    // Init
-    useEffect(() => {
-        loadNewParagraph();
-    }, []);
+    useEffect(() => { loadNewParagraph(); }, []);
 
     useEffect(() => {
         const cleanup = typingRef.current ? blockCopyPaste(typingRef.current) : null;
@@ -49,7 +44,6 @@ export default function Practice() {
         setTimeLeft(duration);
         setWpm(0); setAccuracy(100); setCorrectChars(0); setTotalTyped(0);
         setCorrectWords(0); setMistakes(0); setBackspaceCount(0); setScore(0);
-        setKeystrokeLog([]);
     };
 
     useEffect(() => {
@@ -83,20 +77,12 @@ export default function Practice() {
         setScore(calculateFinalScore(calculateWPM(correctWords, elapsed), calculateAccuracy(correctChars, totalTyped)));
     }, [charIndex, correctChars, totalTyped, correctWords]);
 
+    // Instant start — just click "Start" and typing begins immediately
     const startTyping = () => {
-        setStatus('countdown');
-        setCountdown(3);
-        let count = 3;
-        const interval = setInterval(() => {
-            count--;
-            setCountdown(count);
-            if (count <= 0) {
-                clearInterval(interval);
-                setStatus('active');
-                setStartTime(Date.now());
-                typingRef.current?.focus();
-            }
-        }, 1000);
+        setStatus('active');
+        setStartTime(Date.now());
+        setTimeLeft(duration);
+        setTimeout(() => typingRef.current?.focus(), 50);
     };
 
     const handleKeyDown = useCallback((e) => {
@@ -113,7 +99,6 @@ export default function Practice() {
                 setCharIndex(prev => prev - 1);
                 setCharStates(prev => { const n = [...prev]; n[charIndex - 1] = 'pending'; return n; });
             }
-            setKeystrokeLog(prev => [...prev, { key: '⌫', timestamp: ts, correct: null }]);
             return;
         }
 
@@ -138,8 +123,6 @@ export default function Practice() {
         }
 
         setCharIndex(prev => prev + 1);
-        setKeystrokeLog(prev => [...prev, { key, expected, timestamp: ts, correct: isCorrect }]);
-
         if (charIndex + 1 >= paragraph.length) setStatus('finished');
     }, [status, charIndex, paragraph, charStates]);
 
@@ -175,15 +158,7 @@ export default function Practice() {
 
             {/* Timer */}
             <div className={`timer ${timerClass}`} style={{ marginBottom: '20px', fontSize: '42px' }}>
-                {status === 'countdown' ? (
-                    <span style={{ animation: 'countUp 0.5s ease' }}>{countdown}</span>
-                ) : status === 'active' ? (
-                    formatTime(timeLeft)
-                ) : status === 'ready' ? (
-                    formatTime(duration)
-                ) : (
-                    '00:00'
-                )}
+                {status === 'active' ? formatTime(timeLeft) : status === 'ready' ? formatTime(duration) : '00:00'}
             </div>
 
             {/* Live Stats */}

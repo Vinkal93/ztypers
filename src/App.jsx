@@ -13,6 +13,7 @@ import Results from './pages/Results';
 import Practice from './pages/Practice';
 import Playground from './pages/Playground';
 import LiveViewer from './pages/LiveViewer';
+import About from './pages/About';
 import AdminDashboard from './pages/admin/Dashboard';
 import AdminCreate from './pages/admin/CreateCompetition';
 import AdminManage from './pages/admin/ManageCompetition';
@@ -45,6 +46,7 @@ export default function App() {
         <Route path="/leaderboard/:compId" element={<Leaderboard />} />
         <Route path="/results/:compId" element={<Results />} />
         <Route path="/compare" element={<Compare />} />
+        <Route path="/about" element={<About />} />
 
         {/* Admin auth */}
         <Route path="/login" element={user && isAdmin() ? <Navigate to="/admin" /> : <Login />} />

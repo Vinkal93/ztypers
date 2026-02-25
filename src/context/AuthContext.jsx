@@ -14,14 +14,31 @@ export function AuthProvider({ children }) {
         const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
             if (firebaseUser) {
                 setUser(firebaseUser);
-                // Fetch user data from Firestore
                 try {
                     const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
                     if (userDoc.exists()) {
                         setUserData(userDoc.data());
+                    } else {
+                        // Auto-create user doc if missing (for first admin)
+                        const newData = {
+                            name: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'Admin',
+                            email: firebaseUser.email,
+                            role: 'admin',
+                            bestWPM: 0,
+                            totalCompetitions: 0,
+                            createdAt: new Date().toISOString(),
+                        };
+                        await setDoc(doc(db, 'users', firebaseUser.uid), newData);
+                        setUserData(newData);
                     }
                 } catch (err) {
                     console.error('Error fetching user data:', err);
+                    // Still set basic user data from auth
+                    setUserData({
+                        name: firebaseUser.displayName || 'Admin',
+                        email: firebaseUser.email,
+                        role: 'admin',
+                    });
                 }
             } else {
                 setUser(null);
@@ -34,29 +51,50 @@ export function AuthProvider({ children }) {
 
     const login = async (email, password) => {
         const result = await signInWithEmailAndPassword(auth, email, password);
+        // Fetch user data immediately after login
+        try {
+            const userDoc = await getDoc(doc(db, 'users', result.user.uid));
+            if (userDoc.exists()) {
+                setUserData(userDoc.data());
+            } else {
+                const newData = {
+                    name: result.user.displayName || email.split('@')[0],
+                    email,
+                    role: 'admin',
+                    bestWPM: 0,
+                    totalCompetitions: 0,
+                    createdAt: new Date().toISOString(),
+                };
+                await setDoc(doc(db, 'users', result.user.uid), newData);
+                setUserData(newData);
+            }
+        } catch (e) {
+            console.error('Error setting user data:', e);
+            setUserData({ name: result.user.displayName || 'Admin', email, role: 'admin' });
+        }
         return result.user;
     };
 
-    const register = async (email, password, name, role = 'student') => {
+    const register = async (email, password, name) => {
         const result = await createUserWithEmailAndPassword(auth, email, password);
         await updateProfile(result.user, { displayName: name });
-        // Create user document in Firestore
-        await setDoc(doc(db, 'users', result.user.uid), {
+        const userData = {
             name,
             email,
-            role,
-            photoURL: '',
+            role: 'admin',
             bestWPM: 0,
             totalCompetitions: 0,
-            rank: 0,
             createdAt: new Date().toISOString(),
-        });
-        setUserData({ name, email, role, bestWPM: 0, totalCompetitions: 0, rank: 0 });
+        };
+        await setDoc(doc(db, 'users', result.user.uid), userData);
+        setUserData(userData);
         return result.user;
     };
 
     const logout = async () => {
         await signOut(auth);
+        setUser(null);
+        setUserData(null);
     };
 
     const isAdmin = () => userData?.role === 'admin';

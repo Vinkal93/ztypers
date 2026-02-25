@@ -16,10 +16,23 @@ export default function Login() {
         setError('');
         setLoading(true);
         try {
-            await login(email, password);
-            navigate('/admin');
+            const user = await login(email, password);
+            if (user) {
+                navigate('/admin');
+            }
         } catch (err) {
-            setError(err.message || 'Login failed. Check your credentials.');
+            console.error('Login error:', err);
+            if (err.code === 'auth/user-not-found') {
+                setError('No account found with this email.');
+            } else if (err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
+                setError('Incorrect password. Please try again.');
+            } else if (err.code === 'auth/invalid-email') {
+                setError('Please enter a valid email address.');
+            } else if (err.code === 'auth/too-many-requests') {
+                setError('Too many failed attempts. Please try after some time.');
+            } else {
+                setError(err.message || 'Login failed. Please check your credentials.');
+            }
         }
         setLoading(false);
     };
@@ -45,9 +58,9 @@ export default function Login() {
                     <div style={{
                         padding: '12px 16px', borderRadius: 'var(--radius-md)', marginBottom: '20px',
                         background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)',
-                        color: 'var(--accent-danger)', fontSize: '13px',
+                        color: 'var(--accent-danger)', fontSize: '13px', fontWeight: 500,
                     }}>
-                        {error}
+                        ⚠️ {error}
                     </div>
                 )}
 
@@ -55,15 +68,15 @@ export default function Login() {
                     <div className="form-group">
                         <label className="input-label"><FiMail style={{ marginRight: '6px' }} />Email</label>
                         <input type="email" className="input" placeholder="admin@example.com"
-                            value={email} onChange={e => setEmail(e.target.value)} required />
+                            value={email} onChange={e => setEmail(e.target.value)} required autoComplete="email" />
                     </div>
                     <div className="form-group">
                         <label className="input-label"><FiLock style={{ marginRight: '6px' }} />Password</label>
                         <input type="password" className="input" placeholder="••••••••"
-                            value={password} onChange={e => setPassword(e.target.value)} required />
+                            value={password} onChange={e => setPassword(e.target.value)} required autoComplete="current-password" />
                     </div>
                     <button type="submit" className="btn btn-primary" disabled={loading}
-                        style={{ width: '100%', marginTop: '8px', padding: '14px' }}>
+                        style={{ width: '100%', marginTop: '8px', padding: '14px', fontSize: '15px' }}>
                         {loading ? 'Signing in...' : <><FiLogIn /> Sign In</>}
                     </button>
                 </form>

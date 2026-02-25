@@ -481,19 +481,23 @@ select.input option {
 
 .char {
   display: inline;
-  transition: color 0.1s ease, background 0.1s ease;
+  transition: color 0.15s ease, background 0.15s ease, opacity 0.15s ease;
+  font-weight: 400;
 }
 
 .char.correct {
   color: var(--typing-correct);
+  font-weight: 500;
+  opacity: 1;
 }
 
 .char.incorrect {
   color: var(--typing-incorrect);
-  background: rgba(220, 38, 38, 0.08);
+  background: rgba(220, 38, 38, 0.1);
   border-radius: 2px;
-  text-decoration: underline;
+  text-decoration: underline wavy;
   text-underline-offset: 4px;
+  font-weight: 500;
 }
 
 .char.current {
@@ -505,6 +509,8 @@ select.input option {
 
 .char.pending {
   color: var(--typing-pending);
+  opacity: 0.45;
+  font-weight: 300;
 }
 
 /* ===== LIVE STATS BAR ===== */

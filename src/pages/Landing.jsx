@@ -101,7 +101,8 @@ export default function Landing() {
                 textAlign: 'center', padding: '24px', borderTop: '1px solid var(--bg-glass-border)',
                 color: 'var(--text-muted)', fontSize: '13px',
             }}>
-                © 2026 Z Typers • India's Most Transparent Live Typing Competition Platform
+                <p>© 2026 Z Typers · Built with ❤️ by <Link to="/about" style={{ color: 'var(--accent-primary)', textDecoration: 'none', fontWeight: 600 }}>Vinkal Prajapati</Link></p>
+                <p style={{ marginTop: '4px', fontSize: '11px' }}>India's Most Transparent Live Typing Competition Platform</p>
             </footer>
         </div>
     );
