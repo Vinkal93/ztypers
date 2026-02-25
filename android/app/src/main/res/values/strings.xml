@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Z Typers</string>
+    <string name="title_activity_main">Z Typers</string>
+    <string name="package_name">com.vinkal.ztypers</string>
+    <string name="custom_url_scheme">com.vinkal.ztypers</string>
+</resources>

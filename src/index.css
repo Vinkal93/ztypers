@@ -1089,10 +1089,37 @@ select.input option {
 
   .data-table {
     font-size: 12px;
+    min-width: 600px;
   }
 
   .data-table th,
   .data-table td {
     padding: 10px 8px;
+    white-space: nowrap;
   }
+
+  .glass-card {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .grid-4 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .grid-3 {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ===== SAFE AREA (Capacitor / Notch) ===== */
+body {
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+
+.navbar {
+  padding-top: env(safe-area-inset-top);
 }
