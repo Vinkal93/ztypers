@@ -27,7 +27,7 @@ export default function Register() {
         setLoading(true);
         try {
             await register(email, password, name);
-            navigate('/home');
+            navigate('/admin');
         } catch (err) {
             setError(err.message || 'Registration failed. Try again.');
         }
@@ -36,19 +36,18 @@ export default function Register() {
 
     return (
         <div style={{
-            minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
-            background: 'radial-gradient(ellipse at 30% 50%, rgba(0,212,255,0.06) 0%, transparent 50%), radial-gradient(ellipse at 70% 30%, rgba(124,58,237,0.06) 0%, transparent 50%)',
+            minHeight: 'calc(100vh - 64px)', display: 'flex', alignItems: 'center', justifyContent: 'center',
             padding: '20px',
         }}>
             <div className="glass-card fade-in" style={{ maxWidth: '440px', width: '100%', padding: '40px' }}>
                 <div style={{ textAlign: 'center', marginBottom: '32px' }}>
-                    <span style={{ fontSize: '48px' }}>⚡</span>
+                    <span style={{ fontSize: '48px', display: 'block' }}>⚡</span>
                     <h1 style={{
                         fontFamily: 'var(--font-display)', fontSize: '28px', fontWeight: 800, marginTop: '12px',
                         background: 'var(--accent-gradient)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
-                    }}>Join Z Typers</h1>
+                    }}>Admin Registration</h1>
                     <p style={{ color: 'var(--text-secondary)', marginTop: '8px', fontSize: '14px' }}>
-                        Create your account and start competing
+                        Create an admin account to manage competitions
                     </p>
                 </div>
 
@@ -70,24 +69,22 @@ export default function Register() {
                     </div>
                     <div className="form-group">
                         <label className="input-label"><FiMail style={{ marginRight: '6px' }} />Email</label>
-                        <input type="email" className="input" placeholder="your@email.com"
+                        <input type="email" className="input" placeholder="admin@example.com"
                             value={email} onChange={e => setEmail(e.target.value)} required />
                     </div>
-                    <div className="form-row">
-                        <div className="form-group">
-                            <label className="input-label"><FiLock style={{ marginRight: '6px' }} />Password</label>
-                            <input type="password" className="input" placeholder="••••••••"
-                                value={password} onChange={e => setPassword(e.target.value)} required />
-                        </div>
-                        <div className="form-group">
-                            <label className="input-label"><FiLock style={{ marginRight: '6px' }} />Confirm</label>
-                            <input type="password" className="input" placeholder="••••••••"
-                                value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} required />
-                        </div>
+                    <div className="form-group">
+                        <label className="input-label"><FiLock style={{ marginRight: '6px' }} />Password</label>
+                        <input type="password" className="input" placeholder="••••••••"
+                            value={password} onChange={e => setPassword(e.target.value)} required />
+                    </div>
+                    <div className="form-group">
+                        <label className="input-label"><FiLock style={{ marginRight: '6px' }} />Confirm Password</label>
+                        <input type="password" className="input" placeholder="••••••••"
+                            value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} required />
                     </div>
                     <button type="submit" className="btn btn-primary" disabled={loading}
                         style={{ width: '100%', marginTop: '8px', padding: '14px' }}>
-                        {loading ? 'Creating account...' : <><FiUserPlus /> Create Account</>}
+                        {loading ? 'Creating account...' : <><FiUserPlus /> Create Admin Account</>}
                     </button>
                 </form>
 

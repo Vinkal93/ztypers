@@ -11,12 +11,15 @@ import Profile from './pages/Profile';
 import Compare from './pages/Compare';
 import Results from './pages/Results';
 import Practice from './pages/Practice';
+import Playground from './pages/Playground';
 import LiveViewer from './pages/LiveViewer';
 import AdminDashboard from './pages/admin/Dashboard';
 import AdminCreate from './pages/admin/CreateCompetition';
 import AdminManage from './pages/admin/ManageCompetition';
 import AdminPerformance from './pages/admin/Performance';
 import AdminDisputes from './pages/admin/Disputes';
+import StudentManager from './pages/admin/StudentManager';
+import PlaygroundControl from './pages/admin/PlaygroundControl';
 
 function AdminRoute({ children }) {
   const { user, isAdmin, loading } = useAuth();
@@ -32,29 +35,33 @@ export default function App() {
     <>
       <Navbar />
       <Routes>
-        {/* Public routes — no login needed */}
+        {/* Public routes */}
         <Route path="/" element={<Landing />} />
         <Route path="/practice" element={<Practice />} />
+        <Route path="/playground" element={<Playground />} />
         <Route path="/live" element={<LiveViewer />} />
         <Route path="/live/:compId" element={<LiveViewer />} />
         <Route path="/leaderboard" element={<Leaderboard />} />
         <Route path="/leaderboard/:compId" element={<Leaderboard />} />
         <Route path="/results/:compId" element={<Results />} />
-
-        {/* Admin login */}
-        <Route path="/login" element={user && isAdmin() ? <Navigate to="/admin" /> : <Login />} />
-
-        {/* Protected student routes (for compete) */}
-        <Route path="/compete/:compId" element={<Compete />} />
-        <Route path="/profile" element={user ? <Profile /> : <Navigate to="/login" />} />
         <Route path="/compare" element={<Compare />} />
 
-        {/* Admin Routes — login required */}
+        {/* Admin auth */}
+        <Route path="/login" element={user && isAdmin() ? <Navigate to="/admin" /> : <Login />} />
+        <Route path="/register" element={user && isAdmin() ? <Navigate to="/admin" /> : <Register />} />
+
+        {/* Protected routes */}
+        <Route path="/compete/:compId" element={<Compete />} />
+        <Route path="/profile" element={user ? <Profile /> : <Navigate to="/login" />} />
+
+        {/* Admin Routes */}
         <Route path="/admin" element={<AdminRoute><AdminDashboard /></AdminRoute>} />
         <Route path="/admin/create" element={<AdminRoute><AdminCreate /></AdminRoute>} />
         <Route path="/admin/manage/:compId" element={<AdminRoute><AdminManage /></AdminRoute>} />
         <Route path="/admin/performance/:compId" element={<AdminRoute><AdminPerformance /></AdminRoute>} />
         <Route path="/admin/disputes/:compId" element={<AdminRoute><AdminDisputes /></AdminRoute>} />
+        <Route path="/admin/students" element={<AdminRoute><StudentManager /></AdminRoute>} />
+        <Route path="/admin/playground" element={<AdminRoute><PlaygroundControl /></AdminRoute>} />
       </Routes>
     </>
   );

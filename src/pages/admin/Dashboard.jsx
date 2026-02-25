@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { collection, query, onSnapshot, orderBy, getDocs } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
-import { FiPlus, FiUsers, FiAward, FiActivity, FiBarChart2, FiSettings } from 'react-icons/fi';
+import { FiPlus, FiUsers, FiAward, FiActivity, FiBarChart2, FiSettings, FiPlay } from 'react-icons/fi';
 
 export default function AdminDashboard() {
     const [competitions, setCompetitions] = useState([]);
@@ -36,11 +36,19 @@ export default function AdminDashboard() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px', flexWrap: 'wrap', gap: '16px' }}>
                 <div>
                     <h1 className="page-title">⚙️ Admin Dashboard</h1>
-                    <p className="page-subtitle">Manage competitions and view analytics</p>
+                    <p className="page-subtitle">Manage competitions, students, and playground</p>
                 </div>
-                <Link to="/admin/create" className="btn btn-primary btn-lg">
-                    <FiPlus /> Create Competition
-                </Link>
+                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                    <Link to="/admin/students" className="btn btn-secondary">
+                        <FiUsers /> Students
+                    </Link>
+                    <Link to="/admin/playground" className="btn btn-success">
+                        <FiPlay /> Playground
+                    </Link>
+                    <Link to="/admin/create" className="btn btn-primary">
+                        <FiPlus /> Create Competition
+                    </Link>
+                </div>
             </div>
 
             {/* Stats */}
