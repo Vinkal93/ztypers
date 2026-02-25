@@ -127,6 +127,12 @@ export default function Navbar() {
                     )}
 
                     <div className="sidebar-divider" />
+                    <NavLink to="/about" onClick={closeSidebar}
+                        className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
+                        <FiUsers size={18} />
+                        <span>About Developer</span>
+                    </NavLink>
+                    <div className="sidebar-divider" />
 
                     {user ? (
                         <button onClick={handleLogout} className="sidebar-link" style={{ border: 'none', background: 'none', width: '100%', cursor: 'pointer' }}>

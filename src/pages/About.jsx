@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import { FiGithub, FiGlobe, FiMail, FiCode, FiZap, FiArrowLeft, FiExternalLink } from 'react-icons/fi';
+import vinkalPhoto from '../assets/Vinkal prajapati.jpg';
 
 export default function About() {
     return (
@@ -10,11 +11,13 @@ export default function About() {
 
             {/* Hero Section */}
             <div className="glass-card" style={{ textAlign: 'center', padding: '48px 32px', marginBottom: '32px' }}>
-                <div style={{
-                    width: '120px', height: '120px', borderRadius: 'var(--radius-full)',
-                    background: 'var(--accent-gradient)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: '48px', color: 'white', margin: '0 auto 24px', boxShadow: 'var(--shadow-glow)',
-                }}>VP</div>
+                <img src={vinkalPhoto} alt="Vinkal Prajapati"
+                    style={{
+                        width: '140px', height: '140px', borderRadius: '50%', objectFit: 'cover',
+                        border: '4px solid transparent', backgroundClip: 'padding-box',
+                        boxShadow: '0 0 0 4px rgba(0,212,255,0.3), 0 0 30px rgba(124,58,237,0.2), var(--shadow-md)',
+                        margin: '0 auto 24px', display: 'block',
+                    }} />
                 <h1 style={{
                     fontFamily: 'var(--font-display)', fontSize: 'clamp(28px, 5vw, 42px)', fontWeight: 900,
                     background: 'var(--accent-gradient)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
