@@ -1,207 +1,198 @@
 import { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
-import { collection, query, onSnapshot, orderBy, getDocs } from 'firebase/firestore';
+import { collection, onSnapshot, doc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
-import { rankParticipants } from '../lib/ranking';
-import { FiRadio, FiZap, FiTarget, FiAward, FiUsers, FiClock } from 'react-icons/fi';
+import { FiRadio, FiUsers, FiZap, FiTarget, FiAward, FiClock } from 'react-icons/fi';
 
 export default function LiveViewer() {
-    const { compId } = useParams();
-    const [competitions, setCompetitions] = useState([]);
-    const [activeComp, setActiveComp] = useState(null);
-    const [selectedCompId, setSelectedCompId] = useState(compId || '');
-    const [participants, setParticipants] = useState([]);
-    const [loading, setLoading] = useState(true);
+    const [playgroundParticipants, setPlaygroundParticipants] = useState([]);
+    const [playgroundSettings, setPlaygroundSettings] = useState(null);
 
-    // Load competitions
+    // Listen to playground settings
     useEffect(() => {
-        const q = query(collection(db, 'competitions'), orderBy('createdAt', 'desc'));
-        const unsub = onSnapshot(q, (snap) => {
-            const comps = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-            setCompetitions(comps);
-            const active = comps.find(c => c.status === 'active');
-            if (active && !selectedCompId) {
-                setSelectedCompId(active.id);
-                setActiveComp(active);
-            } else if (selectedCompId) {
-                setActiveComp(comps.find(c => c.id === selectedCompId) || null);
-            }
-            setLoading(false);
+        const unsub = onSnapshot(doc(db, 'settings', 'playground'), (snap) => {
+            if (snap.exists()) setPlaygroundSettings(snap.data());
         });
         return () => unsub();
     }, []);
 
-    // Load participants
+    // Listen to playground participants
     useEffect(() => {
-        if (!selectedCompId) return;
-        const comp = competitions.find(c => c.id === selectedCompId);
-        setActiveComp(comp || null);
-        const unsub = onSnapshot(collection(db, 'competitions', selectedCompId, 'participants'), (snap) => {
-            const parts = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-            setParticipants(rankParticipants(parts));
+        const unsub = onSnapshot(collection(db, 'playground_participants'), (snap) => {
+            const parts = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+                .sort((a, b) => (b.score || 0) - (a.score || 0))
+                .map((p, i) => ({ ...p, rank: i + 1 }));
+            setPlaygroundParticipants(parts);
         });
         return () => unsub();
-    }, [selectedCompId, competitions]);
+    }, []);
 
-    const getRankEmoji = (rank) => {
-        if (rank === 1) return '🥇';
-        if (rank === 2) return '🥈';
-        if (rank === 3) return '🥉';
-        return `#${rank}`;
-    };
+    const isLive = playgroundSettings?.status === 'active';
+    const isCountdown = playgroundSettings?.status === 'countdown';
+    const isEnded = playgroundSettings?.status === 'ended';
 
-    const isActive = activeComp?.status === 'active';
+    const topWpm = playgroundParticipants.length > 0 ? Math.max(...playgroundParticipants.map(p => p.wpm || 0)) : 0;
+    const avgWpm = playgroundParticipants.length > 0
+        ? Math.round(playgroundParticipants.reduce((s, p) => s + (p.wpm || 0), 0) / playgroundParticipants.length)
+        : 0;
+    const avgAcc = playgroundParticipants.length > 0
+        ? Math.round(playgroundParticipants.reduce((s, p) => s + (p.accuracy || 0), 0) / playgroundParticipants.length)
+        : 0;
 
     return (
         <div className="page-container fade-in">
-            {/* Live Banner */}
-            {isActive && (
-                <div className="live-banner">
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <span className="live-pulse" />
-                        <span style={{ fontWeight: 700, fontSize: '16px' }}>LIVE</span>
-                        <span style={{ opacity: 0.9 }}>{activeComp?.title || 'Competition'}</span>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                        <span><FiUsers size={14} /> {participants.length} participants</span>
-                        {activeComp?.prize && <span>🏆 ₹{activeComp.prize}</span>}
-                    </div>
-                </div>
-            )}
-
             <div className="page-header">
-                <h1 className="page-title">
-                    <FiRadio style={{ marginRight: '8px' }} />
-                    {isActive ? 'Live Competition' : 'Competition Viewer'}
-                </h1>
-                <p className="page-subtitle">
-                    {isActive ? 'Real-time rankings — auto-refreshes every 2-3 seconds' : 'Select a competition to view live or past rankings'}
-                </p>
+                <h1 className="page-title"><FiRadio style={{ marginRight: '8px' }} /> Live Competition</h1>
+                <p className="page-subtitle">Watch all participants compete in real-time — updates every second!</p>
             </div>
 
-            {/* Competition Selector */}
-            <div style={{ marginBottom: '24px' }}>
-                <select className="input" value={selectedCompId} onChange={e => setSelectedCompId(e.target.value)}
-                    style={{ maxWidth: '500px' }}>
-                    <option value="">Select Competition...</option>
-                    {competitions.map(c => (
-                        <option key={c.id} value={c.id}>
-                            {c.status === 'active' ? '🟢 ' : c.status === 'ended' ? '🏁 ' : '📅 '}
-                            {c.title || 'Competition'} — {c.status}
-                        </option>
-                    ))}
-                </select>
-            </div>
-
-            {!selectedCompId ? (
-                <div className="glass-card empty-state">
-                    <div className="empty-state-icon">📺</div>
-                    <div className="empty-state-title">Select a competition</div>
-                    <div className="empty-state-text">Choose from the dropdown to see live or past rankings</div>
+            {/* Status Banner */}
+            {(isLive || isCountdown) && (
+                <div className="live-banner" style={{ marginBottom: '24px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <div className="live-pulse" />
+                        <span style={{ fontWeight: 700, fontSize: '16px' }}>
+                            {isCountdown ? '⏳ Countdown in Progress...' : '🔴 Competition is LIVE!'}
+                        </span>
+                    </div>
+                    <span style={{ fontSize: '13px', opacity: 0.9 }}>
+                        {playgroundParticipants.length} participants
+                    </span>
                 </div>
-            ) : (
-                <>
-                    {/* Live Stats Summary */}
-                    <div className="grid-4" style={{ marginBottom: '24px' }}>
-                        <div className="glass-card" style={{ textAlign: 'center' }}>
-                            <div className="stat-value" style={{ color: 'var(--accent-primary)', fontSize: '28px' }}>{participants.length}</div>
-                            <div className="stat-label"><FiUsers size={12} /> Participants</div>
-                        </div>
-                        <div className="glass-card" style={{ textAlign: 'center' }}>
-                            <div className="stat-value" style={{ color: 'var(--accent-primary)', fontSize: '28px' }}>
-                                {participants.length > 0 ? Math.max(...participants.map(p => p.wpm || 0)) : 0}
-                            </div>
-                            <div className="stat-label"><FiZap size={12} /> Top WPM</div>
-                        </div>
-                        <div className="glass-card" style={{ textAlign: 'center' }}>
-                            <div className="stat-value" style={{ color: 'var(--accent-success)', fontSize: '28px' }}>
-                                {participants.length > 0 ? Math.max(...participants.map(p => p.accuracy || 0)) : 0}%
-                            </div>
-                            <div className="stat-label"><FiTarget size={12} /> Best Accuracy</div>
-                        </div>
-                        <div className="glass-card" style={{ textAlign: 'center' }}>
-                            <div className="stat-value" style={{ color: 'var(--rank-gold)', fontSize: '28px' }}>
-                                {participants.length > 0 ? Math.max(...participants.map(p => p.score || 0)) : 0}
-                            </div>
-                            <div className="stat-label"><FiAward size={12} /> Top Score</div>
-                        </div>
-                    </div>
-
-                    {/* Live Rankings */}
-                    <div className="glass-card" style={{ padding: 0, overflow: 'hidden' }}>
-                        <div style={{
-                            padding: '20px 24px', borderBottom: '1px solid var(--bg-glass-border)',
-                            display: 'flex', justifyContent: 'space-between', alignItems: 'center'
-                        }}>
-                            <h2 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '18px' }}>
-                                {isActive && <><span className="live-pulse" /> </>}
-                                Live Rankings
-                            </h2>
-                            {isActive && (
-                                <span style={{ fontSize: '12px', color: 'var(--accent-success)', fontWeight: 600 }}>
-                                    Auto-refreshing ✓
-                                </span>
-                            )}
-                        </div>
-
-                        {participants.length === 0 ? (
-                            <div className="empty-state">
-                                <div className="empty-state-icon">⏳</div>
-                                <div className="empty-state-title">Waiting for participants...</div>
-                                <div className="empty-state-text">Rankings will appear as students start typing</div>
-                            </div>
-                        ) : (
-                            <>
-                                {/* Header */}
-                                <div className="leaderboard-row" style={{ borderBottom: '1px solid var(--bg-glass-border)', padding: '10px 20px' }}>
-                                    <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 700 }}>RANK</span>
-                                    <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 700 }}>STUDENT</span>
-                                    <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 700, textAlign: 'center' }}>WPM</span>
-                                    <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 700, textAlign: 'center' }}>ACCURACY</span>
-                                    <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 700, textAlign: 'center' }}>SCORE</span>
-                                </div>
-                                {participants.map((p, i) => (
-                                    <div key={p.id} className="leaderboard-row" style={{
-                                        animation: `fadeIn 0.3s ease ${i * 0.05}s forwards`, opacity: 0,
-                                        background: p.rank <= 3 ? 'var(--accent-gradient-light)' : 'transparent',
-                                    }}>
-                                        <div style={{
-                                            fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: '20px',
-                                            color: p.rank === 1 ? 'var(--rank-gold)' : p.rank === 2 ? 'var(--rank-silver)' : p.rank === 3 ? 'var(--rank-bronze)' : 'var(--text-muted)',
-                                        }}>
-                                            {getRankEmoji(p.rank)}
-                                        </div>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                            <div className="avatar">{p.name?.[0] || '?'}</div>
-                                            <div>
-                                                <div style={{ fontWeight: 600, fontSize: '14px' }}>{p.name}</div>
-                                                {p.tabSwitches > 2 && (
-                                                    <span style={{ fontSize: '10px', color: 'var(--accent-danger)', fontWeight: 600 }}>⚠ Suspicious</span>
-                                                )}
-                                            </div>
-                                        </div>
-                                        <div style={{ textAlign: 'center', fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '16px', color: 'var(--accent-primary)' }}>
-                                            {p.wpm}
-                                        </div>
-                                        <div style={{
-                                            textAlign: 'center', fontFamily: 'var(--font-mono)', fontWeight: 600,
-                                            color: p.accuracy >= 90 ? 'var(--accent-success)' : p.accuracy >= 70 ? 'var(--accent-warning)' : 'var(--accent-danger)'
-                                        }}>
-                                            {p.accuracy}%
-                                        </div>
-                                        <div style={{
-                                            textAlign: 'center', fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: '18px',
-                                            color: p.rank === 1 ? 'var(--rank-gold)' : 'var(--text-primary)'
-                                        }}>
-                                            {p.score}
-                                        </div>
-                                    </div>
-                                ))}
-                            </>
-                        )}
-                    </div>
-                </>
             )}
+
+            {isEnded && (
+                <div style={{
+                    padding: '16px 24px', borderRadius: 'var(--radius-lg)', marginBottom: '24px',
+                    background: 'rgba(107,114,128,0.1)', border: '1px solid rgba(107,114,128,0.2)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                }}>
+                    <span style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>🏁 Competition Ended — Final Results Below</span>
+                    <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>{playgroundParticipants.length} participants</span>
+                </div>
+            )}
+
+            {/* Stats Summary */}
+            {playgroundParticipants.length > 0 && (
+                <div className="grid-4" style={{ marginBottom: '24px' }}>
+                    {[
+                        { icon: <FiUsers size={20} />, value: playgroundParticipants.length, label: 'Participants', color: '#7c3aed' },
+                        { icon: <FiZap size={20} />, value: topWpm, label: 'Top WPM', color: '#2563eb' },
+                        { icon: <FiTarget size={20} />, value: `${avgAcc}%`, label: 'Avg Accuracy', color: '#059669' },
+                        { icon: <FiAward size={20} />, value: avgWpm, label: 'Avg WPM', color: '#d97706' },
+                    ].map((s, i) => (
+                        <div key={i} className="glass-card" style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '16px 20px' }}>
+                            <div style={{
+                                width: '44px', height: '44px', borderRadius: 'var(--radius-md)',
+                                background: `${s.color}15`, color: s.color,
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            }}>{s.icon}</div>
+                            <div>
+                                <div className="stat-value" style={{ fontSize: '24px' }}>{s.value}</div>
+                                <div className="stat-label">{s.label}</div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {/* Podium for top 3 */}
+            {playgroundParticipants.length >= 3 && (
+                <div className="podium" style={{ marginBottom: '24px' }}>
+                    {[1, 0, 2].map(idx => {
+                        const p = playgroundParticipants[idx];
+                        if (!p) return null;
+                        const places = ['first', 'second', 'third'];
+                        const emojis = ['🥇', '🥈', '🥉'];
+                        return (
+                            <div key={idx} className="podium-place">
+                                <div className="avatar" style={{ fontSize: '16px' }}>
+                                    {p.name?.charAt(0)?.toUpperCase() || '?'}
+                                </div>
+                                <div style={{ fontWeight: 700, fontSize: '14px', textAlign: 'center' }}>{p.name}</div>
+                                <div className={`podium-block ${places[idx]}`}>
+                                    <div style={{ fontSize: '28px' }}>{emojis[idx]}</div>
+                                    <div style={{ fontFamily: 'var(--font-display)', fontSize: '20px', fontWeight: 800, marginTop: '4px' }}>
+                                        {p.wpm || 0}
+                                    </div>
+                                    <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>WPM</div>
+                                    <div style={{ fontFamily: 'var(--font-mono)', fontSize: '13px', fontWeight: 700, color: 'var(--rank-gold)' }}>
+                                        {p.score || 0} pts
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
+
+            {/* Full Rankings Table */}
+            <div className="glass-card" style={{ padding: 0, overflow: 'hidden' }}>
+                <div style={{
+                    padding: '16px 20px', borderBottom: '1px solid var(--bg-glass-border)',
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+                }}>
+                    <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700 }}>
+                        {isLive ? '🔴 ' : ''}All Participants
+                    </h3>
+                    {isLive && <span style={{ fontSize: '11px', color: 'var(--accent-success)', fontWeight: 700 }}>Auto-updating</span>}
+                </div>
+                {playgroundParticipants.length === 0 ? (
+                    <div className="empty-state" style={{ padding: '60px' }}>
+                        <div className="empty-state-icon">📺</div>
+                        <div className="empty-state-title">No Active Competition</div>
+                        <div className="empty-state-text">When the admin starts a competition, live results will appear here automatically.</div>
+                    </div>
+                ) : (
+                    <table className="data-table">
+                        <thead>
+                            <tr>
+                                <th>Rank</th>
+                                <th>Name</th>
+                                <th>WPM</th>
+                                <th>Accuracy</th>
+                                <th>Score</th>
+                                <th>Errors</th>
+                                <th>Progress</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {playgroundParticipants.map(p => (
+                                <tr key={p.id}>
+                                    <td style={{
+                                        fontFamily: 'var(--font-display)', fontWeight: 800,
+                                        color: p.rank <= 3 ? ['var(--rank-gold)', 'var(--rank-silver)', 'var(--rank-bronze)'][p.rank - 1] : 'var(--text-muted)'
+                                    }}>
+                                        {p.rank <= 3 ? ['🥇', '🥈', '🥉'][p.rank - 1] : `#${p.rank}`}
+                                    </td>
+                                    <td style={{ fontWeight: 600 }}>{p.name}</td>
+                                    <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--accent-primary)' }}>{p.wpm || 0}</td>
+                                    <td style={{
+                                        fontFamily: 'var(--font-mono)',
+                                        color: (p.accuracy || 0) >= 90 ? 'var(--accent-success)' : 'var(--accent-warning)'
+                                    }}>{p.accuracy || 0}%</td>
+                                    <td style={{ fontFamily: 'var(--font-display)', fontWeight: 800, color: 'var(--rank-gold)' }}>{p.score || 0}</td>
+                                    <td style={{ color: 'var(--accent-danger)' }}>{p.mistakes || 0}</td>
+                                    <td>
+                                        <div style={{ width: '60px', height: '6px', background: 'var(--bg-glass-border)', borderRadius: '3px' }}>
+                                            <div style={{ width: `${p.progress || 0}%`, height: '100%', background: 'var(--accent-gradient)', borderRadius: '3px', transition: 'width 0.5s ease' }} />
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <span style={{
+                                            fontSize: '11px', fontWeight: 600, padding: '3px 8px', borderRadius: 'var(--radius-full)',
+                                            background: p.finished ? 'rgba(5,150,105,0.1)' : 'rgba(37,99,235,0.1)',
+                                            color: p.finished ? 'var(--accent-success)' : 'var(--accent-primary)',
+                                        }}>
+                                            {p.finished ? '✅ Done' : '⌨️ Typing'}
+                                        </span>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                )}
+            </div>
         </div>
     );
 }
