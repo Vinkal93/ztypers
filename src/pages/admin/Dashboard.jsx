@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { collection, query, onSnapshot, orderBy, getDocs } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
-import { FiPlus, FiUsers, FiAward, FiActivity, FiBarChart2, FiSettings, FiPlay } from 'react-icons/fi';
+import { FiPlus, FiUsers, FiAward, FiActivity, FiBarChart2, FiSettings, FiPlay, FiPackage, FiClipboard, FiClock } from 'react-icons/fi';
 
 export default function AdminDashboard() {
     const [competitions, setCompetitions] = useState([]);
@@ -42,8 +42,17 @@ export default function AdminDashboard() {
                     <Link to="/admin/students" className="btn btn-secondary">
                         <FiUsers /> Students
                     </Link>
+                    <Link to="/admin/batches" className="btn btn-secondary">
+                        <FiPackage /> Batches
+                    </Link>
                     <Link to="/admin/playground" className="btn btn-success">
                         <FiPlay /> Playground
+                    </Link>
+                    <Link to="/admin/enrollments" className="btn btn-secondary">
+                        <FiClipboard /> Enrollments
+                    </Link>
+                    <Link to="/admin/batch-history" className="btn btn-secondary">
+                        <FiClock /> Batch History
                     </Link>
                     <Link to="/admin/create" className="btn btn-primary">
                         <FiPlus /> Create Competition

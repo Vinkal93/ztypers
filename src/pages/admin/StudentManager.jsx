@@ -156,6 +156,7 @@ export default function StudentManager() {
                                 <th>Name</th>
                                 <th>Student ID</th>
                                 <th>Password</th>
+                                <th>Batch</th>
                                 <th>Best WPM</th>
                                 <th>Competitions</th>
                                 <th>Actions</th>
@@ -167,6 +168,11 @@ export default function StudentManager() {
                                     <td style={{ fontWeight: 600 }}>{s.name}</td>
                                     <td style={{ fontFamily: 'var(--font-mono)', color: 'var(--accent-primary)', fontWeight: 600 }}>{s.studentId}</td>
                                     <td style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>{s.password}</td>
+                                    <td style={{ fontSize: '12px' }}>
+                                        {s.batchName ? (
+                                            <span style={{ padding: '3px 8px', borderRadius: 'var(--radius-full)', fontSize: '11px', fontWeight: 600, background: 'rgba(124,58,237,0.1)', color: '#7c3aed', border: '1px solid rgba(124,58,237,0.2)' }}>{s.batchName}</span>
+                                        ) : <span style={{ color: 'var(--text-muted)' }}>—</span>}
+                                    </td>
                                     <td style={{ fontFamily: 'var(--font-mono)', color: 'var(--accent-primary)' }}>{s.bestWPM || 0}</td>
                                     <td>{s.totalCompetitions || 0}</td>
                                     <td>

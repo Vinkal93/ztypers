@@ -45,10 +45,28 @@ service cloud.firestore {
       allow write: if true;
     }
 
-    // Winners — anyone can read, only authenticated admins can write
+    // Winners — anyone can read/write (admin writes from playground control)
     match /winners/{winnerId} {
       allow read: if true;
+      allow write: if true;
+    }
+
+    // Batches — anyone can read, only authenticated admins can write
+    match /batches/{batchId} {
+      allow read: if true;
       allow write: if request.auth != null;
+    }
+
+    // Enrollments — anyone can read and write (public enrollment form)
+    match /enrollments/{enrollId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Competition History — anyone can read/write (saved from playground)
+    match /competition_history/{historyId} {
+      allow read: if true;
+      allow write: if true;
     }
   }
 }

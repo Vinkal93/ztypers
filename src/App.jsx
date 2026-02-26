@@ -15,6 +15,7 @@ import Playground from './pages/Playground';
 import LiveViewer from './pages/LiveViewer';
 import Winners from './pages/Winners';
 import About from './pages/About';
+import Enroll from './pages/Enroll';
 import AdminDashboard from './pages/admin/Dashboard';
 import AdminCreate from './pages/admin/CreateCompetition';
 import AdminManage from './pages/admin/ManageCompetition';
@@ -22,6 +23,9 @@ import AdminPerformance from './pages/admin/Performance';
 import AdminDisputes from './pages/admin/Disputes';
 import StudentManager from './pages/admin/StudentManager';
 import PlaygroundControl from './pages/admin/PlaygroundControl';
+import BatchManager from './pages/admin/BatchManager';
+import EnrollmentManager from './pages/admin/EnrollmentManager';
+import BatchHistory from './pages/admin/BatchHistory';
 
 function AdminRoute({ children }) {
   const { user, isAdmin, loading } = useAuth();
@@ -50,6 +54,7 @@ export default function App() {
         <Route path="/compare" element={<Compare />} />
         <Route path="/winners" element={<Winners />} />
         <Route path="/about" element={<About />} />
+        <Route path="/enroll" element={<Enroll />} />
 
         {/* Admin auth */}
         <Route path="/login" element={user && isAdmin() ? <Navigate to="/admin" /> : <Login />} />
@@ -67,6 +72,9 @@ export default function App() {
         <Route path="/admin/disputes/:compId" element={<AdminRoute><AdminDisputes /></AdminRoute>} />
         <Route path="/admin/students" element={<AdminRoute><StudentManager /></AdminRoute>} />
         <Route path="/admin/playground" element={<AdminRoute><PlaygroundControl /></AdminRoute>} />
+        <Route path="/admin/batches" element={<AdminRoute><BatchManager /></AdminRoute>} />
+        <Route path="/admin/enrollments" element={<AdminRoute><EnrollmentManager /></AdminRoute>} />
+        <Route path="/admin/batch-history" element={<AdminRoute><BatchHistory /></AdminRoute>} />
       </Routes>
     </>
   );

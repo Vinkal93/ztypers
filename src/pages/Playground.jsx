@@ -3,7 +3,9 @@ import { doc, setDoc, onSnapshot, collection, getDoc } from 'firebase/firestore'
 import { db } from '../lib/firebase';
 import { calculateWPM, calculateAccuracy, calculateFinalScore, formatTime } from '../lib/ranking';
 import { blockCopyPaste } from '../lib/antiCheat';
-import { FiZap, FiTarget, FiClock, FiHash, FiDelete, FiAward, FiLogIn, FiRadio } from 'react-icons/fi';
+import { FiZap, FiTarget, FiClock, FiHash, FiDelete, FiAward, FiLogIn, FiRadio, FiLogOut } from 'react-icons/fi';
+
+const SESSION_DURATION = 60 * 60 * 1000; // 1 hour in ms
 
 export default function Playground() {
     const typingRef = useRef(null);
@@ -14,6 +16,8 @@ export default function Playground() {
     const [student, setStudent] = useState(null);
     const [loginError, setLoginError] = useState('');
     const [loggingIn, setLoggingIn] = useState(false);
+    const [loginTime, setLoginTime] = useState(null);
+    const [sessionTimeLeft, setSessionTimeLeft] = useState(SESSION_DURATION);
 
     // Admin settings (from Firestore)
     const [settings, setSettings] = useState(null);
@@ -40,6 +44,29 @@ export default function Playground() {
     // Live rankings
     const [participants, setParticipants] = useState([]);
 
+    // ---------- SESSION TIMER (1 Hour) ----------
+    useEffect(() => {
+        if (!loginTime || !student) return;
+        const interval = setInterval(() => {
+            const elapsed = Date.now() - loginTime;
+            const remaining = Math.max(0, SESSION_DURATION - elapsed);
+            setSessionTimeLeft(remaining);
+            if (remaining <= 0) {
+                // Auto logout
+                handleLogout();
+            }
+        }, 1000);
+        return () => clearInterval(interval);
+    }, [loginTime, student]);
+
+    const formatSessionTime = (ms) => {
+        const totalSec = Math.floor(ms / 1000);
+        const h = Math.floor(totalSec / 3600);
+        const m = Math.floor((totalSec % 3600) / 60);
+        const s = totalSec % 60;
+        return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    };
+
     // Login
     const handleLogin = async () => {
         setLoginError('');
@@ -52,11 +79,23 @@ export default function Playground() {
                 setLoginError('Incorrect password.');
             } else {
                 setStudent({ id: studentDoc.id, ...studentDoc.data() });
+                setLoginTime(Date.now());
+                setSessionTimeLeft(SESSION_DURATION);
             }
         } catch (err) {
             setLoginError('Error: ' + (err.message || 'Something went wrong'));
         }
         setLoggingIn(false);
+    };
+
+    // Logout
+    const handleLogout = () => {
+        setStudent(null);
+        setLoginTime(null);
+        setSessionTimeLeft(SESSION_DURATION);
+        setStudentId('');
+        setPassword('');
+        resetTypingState(settings);
     };
 
     // Listen to admin playground settings
@@ -199,6 +238,16 @@ export default function Playground() {
         return () => unsub();
     }, []);
 
+    // Auto-stop when all participants have finished
+    useEffect(() => {
+        if (!typingActive || participants.length === 0) return;
+        const allFinished = participants.every(p => p.finished === true);
+        if (allFinished && participants.length > 0) {
+            setTypingActive(false);
+            setFinished(true);
+        }
+    }, [participants, typingActive]);
+
     // Anti-cheat
     useEffect(() => {
         if (!typingRef.current) return;
@@ -314,6 +363,7 @@ export default function Playground() {
     const timerClass = timeLeft <= 10 ? 'danger' : timeLeft <= 30 ? 'warning' : '';
     const para = settings?.paragraph || '';
     const myRank = participants.find(p => p.id === student.id)?.rank || '-';
+    const sessionWarning = sessionTimeLeft < 5 * 60 * 1000; // 5 min warning
 
     return (
         <div className="page-container fade-in">
@@ -325,7 +375,19 @@ export default function Playground() {
                     </h1>
                     <p style={{ color: 'var(--text-muted)', fontSize: '13px' }}>ID: {student.id} • Rank: #{myRank}</p>
                 </div>
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                    {/* Session Countdown */}
+                    <div style={{
+                        padding: '8px 16px', borderRadius: 'var(--radius-full)', fontWeight: 700, fontSize: '13px',
+                        background: sessionWarning ? 'rgba(239,68,68,0.1)' : 'rgba(0,212,255,0.1)',
+                        color: sessionWarning ? 'var(--accent-danger)' : 'var(--accent-primary)',
+                        border: `1px solid ${sessionWarning ? 'rgba(239,68,68,0.3)' : 'rgba(0,212,255,0.3)'}`,
+                        display: 'flex', alignItems: 'center', gap: '6px',
+                        animation: sessionWarning ? 'pulse 1s infinite' : 'none',
+                    }}>
+                        <FiClock size={14} />
+                        Session: {formatSessionTime(sessionTimeLeft)}
+                    </div>
                     <span style={{
                         padding: '6px 14px', borderRadius: 'var(--radius-full)', fontWeight: 700, fontSize: '12px',
                         background: typingActive ? 'rgba(5,150,105,0.1)' : countdown ? 'rgba(245,158,11,0.1)' : 'rgba(107,114,128,0.1)',
@@ -334,6 +396,10 @@ export default function Playground() {
                     }}>
                         {typingActive ? '🟢 LIVE' : countdown ? '🟡 GET READY' : finished ? '🏁 FINISHED' : '⏳ WAITING FOR ADMIN'}
                     </span>
+                    <button onClick={handleLogout} className="btn btn-sm btn-danger" title="Logout"
+                        style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <FiLogOut size={14} /> Logout
+                    </button>
                 </div>
             </div>
 

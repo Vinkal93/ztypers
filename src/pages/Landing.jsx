@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { FiZap, FiAward, FiShield, FiRadio, FiBarChart2, FiUsers, FiType, FiArrowRight } from 'react-icons/fi';
+import { FiZap, FiAward, FiShield, FiRadio, FiBarChart2, FiUsers, FiType, FiArrowRight, FiUserPlus } from 'react-icons/fi';
 
 export default function Landing() {
     return (
@@ -33,6 +33,9 @@ export default function Landing() {
                 <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', justifyContent: 'center' }}>
                     <Link to="/practice" className="btn btn-primary btn-lg" style={{ fontSize: '16px' }}>
                         <FiType /> Start Practicing
+                    </Link>
+                    <Link to="/enroll" className="btn btn-lg" style={{ fontSize: '16px', background: 'linear-gradient(135deg, #10b981, #059669)', color: '#fff', border: 'none', padding: '14px 28px', borderRadius: 'var(--radius-full)', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '8px', textDecoration: 'none' }}>
+                        <FiUserPlus /> Enroll Now
                     </Link>
                     <Link to="/live" className="btn btn-secondary btn-lg" style={{ fontSize: '16px' }}>
                         <FiRadio /> Watch Live
@@ -89,11 +92,16 @@ export default function Landing() {
                     Ready to test your typing speed?
                 </h2>
                 <p style={{ color: 'var(--text-secondary)', marginBottom: '24px' }}>
-                    No registration needed! Start practicing right now.
+                    No registration needed! Start practicing right now, or enroll for competitions.
                 </p>
-                <Link to="/practice" className="btn btn-primary btn-lg" style={{ fontSize: '16px', padding: '16px 40px' }}>
-                    Start Typing Now <FiArrowRight />
-                </Link>
+                <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap' }}>
+                    <Link to="/enroll" className="btn btn-lg" style={{ fontSize: '16px', padding: '16px 40px', background: 'linear-gradient(135deg, #10b981, #059669)', color: '#fff', border: 'none', borderRadius: 'var(--radius-full)', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '8px', textDecoration: 'none' }}>
+                        <FiUserPlus /> Enroll Now
+                    </Link>
+                    <Link to="/practice" className="btn btn-primary btn-lg" style={{ fontSize: '16px', padding: '16px 40px' }}>
+                        Start Typing Now <FiArrowRight />
+                    </Link>
+                </div>
             </section>
 
             {/* Footer */}

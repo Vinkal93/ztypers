@@ -1,14 +1,17 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { doc, setDoc, onSnapshot, collection, getDocs, deleteDoc, addDoc } from 'firebase/firestore';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { doc, setDoc, onSnapshot, collection, getDocs, deleteDoc, addDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { getRandomParagraph, easyParagraphs, mediumParagraphs, hardParagraphs } from '../../constants/theme';
-import { FiArrowLeft, FiPlay, FiSquare, FiClock, FiDelete, FiFileText, FiUsers, FiRefreshCw, FiAward, FiRadio, FiDollarSign } from 'react-icons/fi';
+import { FiArrowLeft, FiPlay, FiSquare, FiClock, FiDelete, FiFileText, FiUsers, FiRefreshCw, FiAward, FiRadio, FiDollarSign, FiCheck, FiX } from 'react-icons/fi';
 
 export default function PlaygroundControl() {
     const navigate = useNavigate();
+    const [searchParams] = useSearchParams();
     const [settings, setSettings] = useState(null);
     const [participants, setParticipants] = useState([]);
+    const [batches, setBatches] = useState([]);
+    const [students, setStudents] = useState([]);
     const [form, setForm] = useState({
         paragraph: '',
         duration: 60,
@@ -16,7 +19,10 @@ export default function PlaygroundControl() {
         backspaceEnabled: true,
         difficulty: 'medium',
         prize: 0,
+        batchId: searchParams.get('batch') || '',
     });
+    const [selectedStudentIds, setSelectedStudentIds] = useState([]);
+    const [showStudentPicker, setShowStudentPicker] = useState(false);
 
     useEffect(() => {
         const unsub = onSnapshot(doc(db, 'settings', 'playground'), (snap) => {
@@ -35,6 +41,28 @@ export default function PlaygroundControl() {
         return () => unsub();
     }, []);
 
+    useEffect(() => {
+        const unsub1 = onSnapshot(collection(db, 'batches'), (snap) => {
+            setBatches(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        });
+        const unsub2 = onSnapshot(collection(db, 'students'), (snap) => {
+            setStudents(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        });
+        return () => { unsub1(); unsub2(); };
+    }, []);
+
+    // Auto-select students when batch changes
+    useEffect(() => {
+        if (form.batchId) {
+            const batch = batches.find(b => b.id === form.batchId);
+            if (batch?.studentIds) {
+                setSelectedStudentIds(batch.studentIds);
+            }
+        } else {
+            setSelectedStudentIds(students.map(s => s.id));
+        }
+    }, [form.batchId, batches, students]);
+
     const updateSettings = async (data) => {
         try {
             await setDoc(doc(db, 'settings', 'playground'), data, { merge: true });
@@ -50,6 +78,7 @@ export default function PlaygroundControl() {
             ...form,
             paragraph: para,
             status: 'waiting',
+            selectedStudentIds,
             updatedAt: new Date().toISOString(),
         });
     };
@@ -60,6 +89,7 @@ export default function PlaygroundControl() {
             ...form,
             paragraph: para,
             status: 'countdown',
+            selectedStudentIds,
             countdownSeconds: form.countdownSeconds,
         });
         setTimeout(async () => {
@@ -73,6 +103,7 @@ export default function PlaygroundControl() {
             ...form,
             paragraph: para,
             status: 'active',
+            selectedStudentIds,
             startedAt: new Date().toISOString(),
             countdownSeconds: 3,
         });
@@ -80,6 +111,32 @@ export default function PlaygroundControl() {
 
     const stopCompetition = async () => {
         await updateSettings({ status: 'ended', endedAt: new Date().toISOString() });
+        // Save to competition_history for batch history
+        try {
+            const selectedBatch = batches.find(b => b.id === form.batchId);
+            await addDoc(collection(db, 'competition_history'), {
+                batchId: form.batchId || '',
+                batchName: selectedBatch?.name || 'No Batch',
+                duration: form.duration || 60,
+                difficulty: form.difficulty || 'medium',
+                prize: form.prize || 0,
+                participants: participants.map(p => ({
+                    id: p.id,
+                    studentId: p.studentId || p.id,
+                    name: p.name,
+                    wpm: p.wpm || 0,
+                    accuracy: p.accuracy || 0,
+                    score: p.score || 0,
+                    mistakes: p.mistakes || 0,
+                    backspaceCount: p.backspaceCount || 0,
+                    finished: p.finished || false,
+                })),
+                endedAt: new Date().toISOString(),
+            });
+        } catch (err) {
+            console.error('Error saving competition history:', err);
+        }
+
         // Save winner to winners collection
         if (participants.length > 0) {
             const winner = participants[0];
@@ -94,9 +151,10 @@ export default function PlaygroundControl() {
                     prize: form.prize || 0,
                     difficulty: form.difficulty || 'medium',
                     duration: form.duration || 60,
+                    batchId: form.batchId || '',
+                    batchName: batches.find(b => b.id === form.batchId)?.name || '',
                     totalParticipants: participants.length,
                     date: new Date().toISOString(),
-                    // Top 3
                     runnerUp: participants[1] ? { name: participants[1].name, wpm: participants[1].wpm, score: participants[1].score } : null,
                     thirdPlace: participants[2] ? { name: participants[2].name, wpm: participants[2].wpm, score: participants[2].score } : null,
                 });
@@ -113,17 +171,25 @@ export default function PlaygroundControl() {
         }
         await updateSettings({
             status: 'waiting', paragraph: '', duration: 60, countdownSeconds: 10,
-            backspaceEnabled: true, difficulty: 'medium', prize: 0,
+            backspaceEnabled: true, difficulty: 'medium', prize: 0, batchId: '', selectedStudentIds: [],
         });
-        setForm({ paragraph: '', duration: 60, countdownSeconds: 10, backspaceEnabled: true, difficulty: 'medium', prize: 0 });
+        setForm({ paragraph: '', duration: 60, countdownSeconds: 10, backspaceEnabled: true, difficulty: 'medium', prize: 0, batchId: '' });
+        setSelectedStudentIds([]);
     };
 
     const randomParagraph = () => {
         setForm(prev => ({ ...prev, paragraph: getRandomParagraph(prev.difficulty) }));
     };
 
+    const toggleStudentSelection = (sid) => {
+        setSelectedStudentIds(prev =>
+            prev.includes(sid) ? prev.filter(s => s !== sid) : [...prev, sid]
+        );
+    };
+
     const isActive = settings?.status === 'active';
     const isCountdown = settings?.status === 'countdown';
+    const batchStudents = form.batchId ? students.filter(s => (batches.find(b => b.id === form.batchId)?.studentIds || []).includes(s.id)) : students;
 
     return (
         <div className="page-container fade-in">
@@ -138,7 +204,7 @@ export default function PlaygroundControl() {
 
             {/* Status */}
             <div className="glass-card" style={{ marginBottom: '24px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
                     <span style={{
                         padding: '6px 16px', borderRadius: 'var(--radius-full)', fontWeight: 700, fontSize: '13px',
                         background: isActive ? 'rgba(5,150,105,0.1)' : isCountdown ? 'rgba(245,158,11,0.1)' : 'rgba(107,114,128,0.1)',
@@ -150,6 +216,11 @@ export default function PlaygroundControl() {
                     <span style={{ color: 'var(--text-muted)', fontSize: '13px' }}>
                         <FiUsers size={14} style={{ marginRight: '4px' }} /> {participants.length} participants
                     </span>
+                    {form.batchId && (
+                        <span style={{ padding: '4px 10px', borderRadius: 'var(--radius-full)', fontSize: '11px', fontWeight: 700, background: 'rgba(124,58,237,0.1)', color: '#7c3aed', border: '1px solid rgba(124,58,237,0.3)' }}>
+                            📦 {batches.find(b => b.id === form.batchId)?.name || 'Batch'}
+                        </span>
+                    )}
                 </div>
                 <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                     {!isActive && !isCountdown && (
@@ -177,6 +248,46 @@ export default function PlaygroundControl() {
                 <div className="glass-card">
                     <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, marginBottom: '16px' }}>⚙️ Settings</h3>
 
+                    {/* Batch Selector */}
+                    <div className="form-group">
+                        <label className="input-label">📦 Batch</label>
+                        <select className="input" value={form.batchId} onChange={e => setForm({ ...form, batchId: e.target.value })}>
+                            <option value="">All Students (No Batch Filter)</option>
+                            {batches.map(b => (
+                                <option key={b.id} value={b.id}>{b.name} ({(b.studentIds || []).length} students)</option>
+                            ))}
+                        </select>
+                    </div>
+
+                    {/* Student Selector */}
+                    <div className="form-group">
+                        <label className="input-label">👥 Participants ({selectedStudentIds.length} selected)</label>
+                        <button onClick={() => setShowStudentPicker(!showStudentPicker)}
+                            className="btn btn-sm btn-secondary" style={{ marginBottom: '8px' }}>
+                            <FiUsers size={14} /> {showStudentPicker ? 'Hide' : 'Choose Students'}
+                        </button>
+                        {showStudentPicker && (
+                            <div style={{ maxHeight: '200px', overflow: 'auto', borderRadius: 'var(--radius-md)', border: '1px solid var(--bg-glass-border)', padding: '8px' }}>
+                                <div style={{ display: 'flex', gap: '4px', marginBottom: '8px' }}>
+                                    <button onClick={() => setSelectedStudentIds(batchStudents.map(s => s.id))} className="btn btn-sm btn-primary" style={{ fontSize: '11px' }}>Select All</button>
+                                    <button onClick={() => setSelectedStudentIds([])} className="btn btn-sm btn-secondary" style={{ fontSize: '11px' }}>Clear</button>
+                                </div>
+                                {batchStudents.map(s => (
+                                    <label key={s.id} style={{
+                                        display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 8px', cursor: 'pointer',
+                                        borderRadius: '6px', fontSize: '13px',
+                                        background: selectedStudentIds.includes(s.id) ? 'rgba(0,212,255,0.08)' : 'transparent',
+                                    }}>
+                                        <input type="checkbox" checked={selectedStudentIds.includes(s.id)}
+                                            onChange={() => toggleStudentSelection(s.id)} />
+                                        <span style={{ fontWeight: 600 }}>{s.name}</span>
+                                        <span style={{ color: 'var(--text-muted)', fontSize: '11px', fontFamily: 'var(--font-mono)' }}>{s.studentId || s.id}</span>
+                                    </label>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
                     {/* Difficulty */}
                     <div className="form-group">
                         <label className="input-label">📚 Difficulty Level</label>
@@ -200,6 +311,8 @@ export default function PlaygroundControl() {
                             <option value={120}>2 minutes</option>
                             <option value={300}>5 minutes</option>
                             <option value={600}>10 minutes</option>
+                            <option value={900}>15 minutes</option>
+                            <option value={1800}>30 minutes</option>
                         </select>
                     </div>
                     <div className="form-group">
