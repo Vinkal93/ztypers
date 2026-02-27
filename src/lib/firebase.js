@@ -1,6 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import { getFirestore } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
+import { getAnalytics, isSupported } from 'firebase/analytics';
 
 const firebaseConfig = {
     apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyAJL_-EmG7DoGrcMHXMAxTTm-EhYTlDILk",
@@ -15,4 +16,11 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
 export const auth = getAuth(app);
+
+// Initialize Analytics only in browser (not SSR)
+export let analytics = null;
+isSupported().then(supported => {
+    if (supported) analytics = getAnalytics(app);
+});
+
 export default app;

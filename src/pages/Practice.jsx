@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { calculateWPM, calculateAccuracy, calculateFinalScore, formatTime } from '../lib/ranking';
 import { blockCopyPaste } from '../lib/antiCheat';
-import { paragraphs } from '../constants/theme';
+import { allPracticeParagraphs } from '../constants/practiceParagraphs';
 import { FiZap, FiTarget, FiClock, FiRefreshCw, FiHash, FiDelete, FiAward } from 'react-icons/fi';
 
 const TIME_OPTIONS = [15, 30, 60, 120, 300];
@@ -35,7 +35,7 @@ export default function Practice() {
     }, []);
 
     const loadNewParagraph = () => {
-        const p = paragraphs[Math.floor(Math.random() * paragraphs.length)];
+        const p = allPracticeParagraphs[Math.floor(Math.random() * allPracticeParagraphs.length)];
         setParagraph(p);
         setCharStates(p.split('').map(() => 'pending'));
         setCharIndex(0);

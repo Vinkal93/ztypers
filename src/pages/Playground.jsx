@@ -23,6 +23,7 @@ async function getLocation() {
 
 export default function Playground() {
     const typingRef = useRef(null);
+    const currentCharRef = useRef(null);
 
     // Student login
     const [studentId, setStudentId] = useState('');
@@ -358,7 +359,16 @@ export default function Playground() {
         setTypingActive(false);
     };
 
+    // Auto-scroll: keep the current character in view
+    useEffect(() => {
+        if (currentCharRef.current && typingActive) {
+            currentCharRef.current.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+        }
+    }, [charIndex, typingActive]);
+
     const handleKeyDown = useCallback((e) => {
+        // Data Lock: once finished, ignore ALL keystrokes
+        if (finished) { e.preventDefault(); return; }
         if (!typingActive || !settings?.paragraph) return;
         const para = settings.paragraph;
 
@@ -578,7 +588,8 @@ export default function Playground() {
                         onClick={() => typingActive && typingRef.current?.focus()}
                         style={{ marginBottom: '24px' }}>
                         {para.split('').map((char, i) => (
-                            <span key={i} className={`char ${charStates[i] || 'pending'} ${i === charIndex && typingActive ? 'current' : ''}`}>
+                            <span key={i} ref={i === charIndex ? currentCharRef : null}
+                                className={`char ${charStates[i] || 'pending'} ${i === charIndex && typingActive ? 'current' : ''}`}>
                                 {char}
                             </span>
                         ))}

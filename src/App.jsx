@@ -16,6 +16,7 @@ import LiveViewer from './pages/LiveViewer';
 import Winners from './pages/Winners';
 import About from './pages/About';
 import Enroll from './pages/Enroll';
+import UpcomingEvents from './pages/UpcomingEvents';
 import AdminDashboard from './pages/admin/Dashboard';
 import AdminCreate from './pages/admin/CreateCompetition';
 import AdminManage from './pages/admin/ManageCompetition';
@@ -28,6 +29,9 @@ import EnrollmentManager from './pages/admin/EnrollmentManager';
 import BatchHistory from './pages/admin/BatchHistory';
 import SessionHistory from './pages/admin/SessionHistory';
 import Analytics from './pages/admin/Analytics';
+import AdminProfile from './pages/admin/AdminProfile';
+import EventManager from './pages/admin/EventManager';
+import EventAnalytics from './pages/admin/EventAnalytics';
 
 function AdminRoute({ children }) {
   const { user, isAdmin, loading } = useAuth();
@@ -57,6 +61,7 @@ export default function App() {
         <Route path="/winners" element={<Winners />} />
         <Route path="/about" element={<About />} />
         <Route path="/enroll" element={<Enroll />} />
+        <Route path="/events" element={<UpcomingEvents />} />
 
         {/* Admin auth */}
         <Route path="/login" element={user && isAdmin() ? <Navigate to="/admin" /> : <Login />} />
@@ -79,6 +84,9 @@ export default function App() {
         <Route path="/admin/batch-history" element={<AdminRoute><BatchHistory /></AdminRoute>} />
         <Route path="/admin/session-history" element={<AdminRoute><SessionHistory /></AdminRoute>} />
         <Route path="/admin/analytics" element={<AdminRoute><Analytics /></AdminRoute>} />
+        <Route path="/admin/profile" element={<AdminRoute><AdminProfile /></AdminRoute>} />
+        <Route path="/admin/events" element={<AdminRoute><EventManager /></AdminRoute>} />
+        <Route path="/admin/event-analytics/:eventId" element={<AdminRoute><EventAnalytics /></AdminRoute>} />
       </Routes>
     </>
   );

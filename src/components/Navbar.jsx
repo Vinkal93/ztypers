@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
-import { FiHome, FiAward, FiBarChart2, FiLogOut, FiSettings, FiType, FiRadio, FiSun, FiMoon, FiLogIn, FiMenu, FiX, FiUsers, FiPlay, FiUserPlus, FiPackage, FiClipboard, FiClock, FiActivity } from 'react-icons/fi';
+import { FiHome, FiAward, FiBarChart2, FiLogOut, FiSettings, FiType, FiRadio, FiSun, FiMoon, FiLogIn, FiMenu, FiX, FiUsers, FiPlay, FiUserPlus, FiPackage, FiClipboard, FiClock, FiActivity, FiCalendar, FiUser } from 'react-icons/fi';
 
 export default function Navbar() {
     const { user, isAdmin, logout } = useAuth();
@@ -26,6 +26,7 @@ export default function Navbar() {
         { to: '/leaderboard', icon: <FiAward size={18} />, label: 'Rankings' },
         { to: '/compare', icon: <FiBarChart2 size={18} />, label: 'Compare' },
         { to: '/winners', icon: <FiAward size={18} />, label: 'Winners' },
+        { to: '/events', icon: <FiCalendar size={18} />, label: 'Events' },
         { to: '/enroll', icon: <FiUserPlus size={18} />, label: 'Enroll Now' },
     ];
 
@@ -35,9 +36,11 @@ export default function Navbar() {
         { to: '/admin/students', icon: <FiUsers size={18} />, label: 'Students' },
         { to: '/admin/batches', icon: <FiPackage size={18} />, label: 'Batches' },
         { to: '/admin/playground', icon: <FiPlay size={18} />, label: 'Playground Control' },
+        { to: '/admin/events', icon: <FiCalendar size={18} />, label: 'Event Manager' },
         { to: '/admin/enrollments', icon: <FiClipboard size={18} />, label: 'Enrollments' },
         { to: '/admin/batch-history', icon: <FiClock size={18} />, label: 'Batch History' },
         { to: '/admin/session-history', icon: <FiActivity size={18} />, label: 'Session History' },
+        { to: '/admin/profile', icon: <FiUser size={18} />, label: 'Profile' },
     ];
     const adminMode = user && isAdmin();
 
