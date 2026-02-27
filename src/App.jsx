@@ -26,6 +26,8 @@ import PlaygroundControl from './pages/admin/PlaygroundControl';
 import BatchManager from './pages/admin/BatchManager';
 import EnrollmentManager from './pages/admin/EnrollmentManager';
 import BatchHistory from './pages/admin/BatchHistory';
+import SessionHistory from './pages/admin/SessionHistory';
+import Analytics from './pages/admin/Analytics';
 
 function AdminRoute({ children }) {
   const { user, isAdmin, loading } = useAuth();
@@ -75,6 +77,8 @@ export default function App() {
         <Route path="/admin/batches" element={<AdminRoute><BatchManager /></AdminRoute>} />
         <Route path="/admin/enrollments" element={<AdminRoute><EnrollmentManager /></AdminRoute>} />
         <Route path="/admin/batch-history" element={<AdminRoute><BatchHistory /></AdminRoute>} />
+        <Route path="/admin/session-history" element={<AdminRoute><SessionHistory /></AdminRoute>} />
+        <Route path="/admin/analytics" element={<AdminRoute><Analytics /></AdminRoute>} />
       </Routes>
     </>
   );

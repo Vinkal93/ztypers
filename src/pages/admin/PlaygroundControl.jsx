@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { doc, setDoc, onSnapshot, collection, getDocs, deleteDoc, addDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { getRandomParagraph, easyParagraphs, mediumParagraphs, hardParagraphs } from '../../constants/theme';
-import { FiArrowLeft, FiPlay, FiSquare, FiClock, FiDelete, FiFileText, FiUsers, FiRefreshCw, FiAward, FiRadio, FiDollarSign, FiCheck, FiX } from 'react-icons/fi';
+import { FiArrowLeft, FiPlay, FiSquare, FiClock, FiDelete, FiFileText, FiUsers, FiRefreshCw, FiAward, FiRadio, FiDollarSign, FiCheck, FiX, FiLock, FiUnlock, FiPlus, FiMinus } from 'react-icons/fi';
 
 export default function PlaygroundControl() {
     const navigate = useNavigate();
@@ -23,6 +23,8 @@ export default function PlaygroundControl() {
     });
     const [selectedStudentIds, setSelectedStudentIds] = useState([]);
     const [showStudentPicker, setShowStudentPicker] = useState(false);
+    const [frozenIds, setFrozenIds] = useState(new Set()); // frozen participants
+    const [leaderboardFrozen, setLeaderboardFrozen] = useState(false);
 
     useEffect(() => {
         const unsub = onSnapshot(doc(db, 'settings', 'playground'), (snap) => {
@@ -187,9 +189,36 @@ export default function PlaygroundControl() {
         );
     };
 
+    // ── Competition controls ──
+    const adjustScore = async (participantId, delta) => {
+        const p = participants.find(p => p.id === participantId);
+        if (!p) return;
+        const newScore = Math.max(0, (p.score || 0) + delta);
+        try {
+            await updateDoc(doc(db, 'playground_participants', participantId), { score: newScore });
+        } catch (err) { alert('Error: ' + err.message); }
+    };
+
+    const toggleFreezeParticipant = (pid) => {
+        setFrozenIds(prev => {
+            const next = new Set(prev);
+            if (next.has(pid)) next.delete(pid); else next.add(pid);
+            return next;
+        });
+    };
+
+    const resetLeaderboard = async () => {
+        if (!window.confirm('Reset ALL scores to 0? Participants stay in the room.')) return;
+        for (const p of participants) {
+            try { await updateDoc(doc(db, 'playground_participants', p.id), { score: 0, wpm: 0, accuracy: 0, mistakes: 0, backspaceCount: 0, finished: false }); }
+            catch (err) { console.error(err); }
+        }
+    };
+
     const isActive = settings?.status === 'active';
     const isCountdown = settings?.status === 'countdown';
     const batchStudents = form.batchId ? students.filter(s => (batches.find(b => b.id === form.batchId)?.studentIds || []).includes(s.id)) : students;
+    const visibleParticipants = leaderboardFrozen ? participants : participants.filter(p => !frozenIds.has(p.id));
 
     return (
         <div className="page-container fade-in">
@@ -356,16 +385,75 @@ export default function PlaygroundControl() {
                 </div>
             </div>
 
+            {/* Active Students (connected to playground) */}
+            <div className="glass-card" style={{ marginBottom: '24px' }}>
+                <div style={{
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px'
+                }}>
+                    <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700 }}>
+                        👥 Active Students in Playground
+                    </h3>
+                    <span style={{
+                        padding: '4px 12px', borderRadius: 'var(--radius-full)', fontSize: '12px', fontWeight: 700,
+                        background: participants.length > 0 ? 'rgba(5,150,105,0.1)' : 'rgba(107,114,128,0.1)',
+                        color: participants.length > 0 ? 'var(--accent-success)' : 'var(--text-muted)',
+                        border: `1px solid ${participants.length > 0 ? 'rgba(5,150,105,0.3)' : 'rgba(107,114,128,0.3)'}`,
+                    }}>
+                        {participants.length} online
+                    </span>
+                </div>
+                {participants.length === 0 ? (
+                    <p style={{ color: 'var(--text-muted)', fontSize: '13px' }}>No students are currently active in the playground.</p>
+                ) : (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
+                        {participants.map((p, i) => (
+                            <div key={p.id} style={{
+                                display: 'flex', alignItems: 'center', gap: '10px',
+                                padding: '8px 16px', borderRadius: 'var(--radius-full)',
+                                background: 'var(--bg-input)', border: '1px solid var(--bg-glass-border)',
+                            }}>
+                                <div style={{
+                                    width: '28px', height: '28px', borderRadius: '50%',
+                                    background: 'var(--accent-gradient)', display: 'flex',
+                                    alignItems: 'center', justifyContent: 'center',
+                                    fontSize: '12px', fontWeight: 800, color: '#fff', flexShrink: 0,
+                                }}>
+                                    {(p.name || '?')[0].toUpperCase()}
+                                </div>
+                                <div>
+                                    <div style={{ fontWeight: 700, fontSize: '13px' }}>{p.name}</div>
+                                    <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{p.studentId || p.id}</div>
+                                </div>
+                                {p.finished && (
+                                    <span style={{ fontSize: '10px', color: 'var(--accent-success)', fontWeight: 700 }}>✅</span>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+
             {/* Live Rankings */}
             <div className="glass-card" style={{ padding: 0, overflow: 'hidden' }}>
                 <div style={{
                     padding: '16px 24px', borderBottom: '1px solid var(--bg-glass-border)',
-                    display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px'
                 }}>
                     <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700 }}>
                         <FiRadio style={{ marginRight: '8px' }} /> Live Rankings
+                        {isActive && <span style={{ fontSize: '12px', color: 'var(--accent-success)', fontWeight: 600, marginLeft: '10px' }}>🔴 Live</span>}
                     </h3>
-                    {isActive && <span style={{ fontSize: '12px', color: 'var(--accent-success)', fontWeight: 600 }}>🔴 Live</span>}
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                        <button
+                            onClick={() => setLeaderboardFrozen(f => !f)}
+                            className={`btn btn-sm ${leaderboardFrozen ? 'btn-primary' : 'btn-secondary'}`}
+                            title={leaderboardFrozen ? 'Unfreeze leaderboard' : 'Freeze leaderboard display'}>
+                            {leaderboardFrozen ? <FiLock size={13} /> : <FiUnlock size={13} />} {leaderboardFrozen ? 'Frozen' : 'Freeze'}
+                        </button>
+                        <button onClick={resetLeaderboard} className="btn btn-sm" style={{ background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)' }}>
+                            <FiRefreshCw size={13} /> Reset Scores
+                        </button>
+                    </div>
                 </div>
                 {participants.length === 0 ? (
                     <div className="empty-state" style={{ padding: '40px' }}>
@@ -373,33 +461,50 @@ export default function PlaygroundControl() {
                         <div className="empty-state-title">No participants yet</div>
                     </div>
                 ) : (
-                    <table className="data-table">
-                        <thead>
-                            <tr><th>Rank</th><th>Name</th><th>ID</th><th>WPM</th><th>Accuracy</th><th>Score</th><th>Mistakes</th><th>Backsp</th></tr>
-                        </thead>
-                        <tbody>
-                            {participants.map(p => (
-                                <tr key={p.id}>
-                                    <td style={{
-                                        fontFamily: 'var(--font-display)', fontWeight: 800,
-                                        color: p.rank <= 3 ? ['var(--rank-gold)', 'var(--rank-silver)', 'var(--rank-bronze)'][p.rank - 1] : 'var(--text-muted)'
-                                    }}>
-                                        {p.rank <= 3 ? ['🥇', '🥈', '🥉'][p.rank - 1] : `#${p.rank}`}
-                                    </td>
-                                    <td style={{ fontWeight: 600 }}>{p.name}</td>
-                                    <td style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--text-muted)' }}>{p.studentId}</td>
-                                    <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--accent-primary)' }}>{p.wpm}</td>
-                                    <td style={{
-                                        fontFamily: 'var(--font-mono)',
-                                        color: p.accuracy >= 90 ? 'var(--accent-success)' : 'var(--accent-warning)'
-                                    }}>{p.accuracy}%</td>
-                                    <td style={{ fontFamily: 'var(--font-display)', fontWeight: 800, color: 'var(--rank-gold)' }}>{p.score}</td>
-                                    <td style={{ color: 'var(--accent-danger)' }}>{p.mistakes || 0}</td>
-                                    <td>{p.backspaceCount || 0}</td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
+                    <div style={{ overflowX: 'auto' }}>
+                        <table className="data-table">
+                            <thead>
+                                <tr><th>Rank</th><th>Name</th><th>ID</th><th>WPM</th><th>Accuracy</th><th>Score</th><th>Mistakes</th><th>Actions</th></tr>
+                            </thead>
+                            <tbody>
+                                {participants.map(p => (
+                                    <tr key={p.id} style={{ opacity: frozenIds.has(p.id) ? 0.5 : 1 }}>
+                                        <td style={{
+                                            fontFamily: 'var(--font-display)', fontWeight: 800,
+                                            color: p.rank <= 3 ? ['var(--rank-gold)', 'var(--rank-silver)', 'var(--rank-bronze)'][p.rank - 1] : 'var(--text-muted)'
+                                        }}>
+                                            {p.rank <= 3 ? ['🥇', '🥈', '🥉'][p.rank - 1] : `#${p.rank}`}
+                                            {frozenIds.has(p.id) && <span style={{ fontSize: '10px', color: '#ef4444', marginLeft: '4px' }}>🔒</span>}
+                                        </td>
+                                        <td style={{ fontWeight: 600 }}>{p.name}</td>
+                                        <td style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--text-muted)' }}>{p.studentId}</td>
+                                        <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--accent-primary)' }}>{p.wpm}</td>
+                                        <td style={{
+                                            fontFamily: 'var(--font-mono)',
+                                            color: p.accuracy >= 90 ? 'var(--accent-success)' : 'var(--accent-warning)'
+                                        }}>{p.accuracy}%</td>
+                                        <td style={{ fontFamily: 'var(--font-display)', fontWeight: 800, color: 'var(--rank-gold)' }}>{p.score}</td>
+                                        <td style={{ color: 'var(--accent-danger)' }}>{p.mistakes || 0}</td>
+                                        <td>
+                                            <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                                                <button onClick={() => adjustScore(p.id, 10)} className="btn btn-sm" title="+10 score"
+                                                    style={{ padding: '3px 8px', background: 'rgba(16,185,129,0.1)', color: '#10b981', border: '1px solid rgba(16,185,129,0.3)' }}>
+                                                    <FiPlus size={12} />
+                                                </button>
+                                                <button onClick={() => adjustScore(p.id, -10)} className="btn btn-sm" title="-10 score"
+                                                    style={{ padding: '3px 8px', background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)' }}>
+                                                    <FiMinus size={12} />
+                                                </button>
+                                                <button onClick={() => toggleFreezeParticipant(p.id)} className="btn btn-sm btn-secondary" title={frozenIds.has(p.id) ? 'Unfreeze' : 'Freeze score'}>
+                                                    {frozenIds.has(p.id) ? <FiUnlock size={12} /> : <FiLock size={12} />}
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
                 )}
             </div>
         </div>

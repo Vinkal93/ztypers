@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
-import { FiHome, FiAward, FiBarChart2, FiLogOut, FiSettings, FiType, FiRadio, FiSun, FiMoon, FiLogIn, FiMenu, FiX, FiUsers, FiPlay, FiUserPlus, FiPackage, FiClipboard, FiClock } from 'react-icons/fi';
+import { FiHome, FiAward, FiBarChart2, FiLogOut, FiSettings, FiType, FiRadio, FiSun, FiMoon, FiLogIn, FiMenu, FiX, FiUsers, FiPlay, FiUserPlus, FiPackage, FiClipboard, FiClock, FiActivity } from 'react-icons/fi';
 
 export default function Navbar() {
     const { user, isAdmin, logout } = useAuth();
@@ -31,12 +31,15 @@ export default function Navbar() {
 
     const adminLinks = [
         { to: '/admin', icon: <FiSettings size={18} />, label: 'Dashboard' },
+        { to: '/admin/analytics', icon: <FiBarChart2 size={18} />, label: 'Analytics' },
         { to: '/admin/students', icon: <FiUsers size={18} />, label: 'Students' },
         { to: '/admin/batches', icon: <FiPackage size={18} />, label: 'Batches' },
         { to: '/admin/playground', icon: <FiPlay size={18} />, label: 'Playground Control' },
         { to: '/admin/enrollments', icon: <FiClipboard size={18} />, label: 'Enrollments' },
         { to: '/admin/batch-history', icon: <FiClock size={18} />, label: 'Batch History' },
+        { to: '/admin/session-history', icon: <FiActivity size={18} />, label: 'Session History' },
     ];
+    const adminMode = user && isAdmin();
 
     return (
         <>
@@ -48,7 +51,7 @@ export default function Navbar() {
 
                 {/* Desktop Links */}
                 <div className="navbar-links navbar-desktop">
-                    {links.map(l => (
+                    {links.filter(l => !(l.to === '/enroll' && adminMode)).map(l => (
                         <NavLink key={l.to} to={l.to} end={l.end} className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
                             style={l.to === '/enroll' ? { background: 'var(--accent-gradient)', color: '#fff', borderRadius: 'var(--radius-full)', padding: '6px 14px', fontWeight: 700, fontSize: '12px' } : undefined}>
                             {l.icon}
@@ -73,9 +76,8 @@ export default function Navbar() {
                             <FiLogOut size={17} />
                         </button>
                     ) : (
-                        <NavLink to="/login" className="nav-link">
+                        <NavLink to="/login" className="nav-link" title="Admin Login">
                             <FiLogIn size={17} />
-                            <span className="nav-text">Admin</span>
                         </NavLink>
                     )}
                 </div>
@@ -109,7 +111,7 @@ export default function Navbar() {
                 </div>
 
                 <div className="sidebar-content">
-                    {links.map(l => (
+                    {links.filter(l => !(l.to === '/enroll' && adminMode)).map(l => (
                         <NavLink key={l.to} to={l.to} end={l.end} onClick={closeSidebar}
                             className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}
                             style={l.to === '/enroll' ? { background: 'var(--accent-gradient)', color: '#fff', borderRadius: 'var(--radius-md)', fontWeight: 700 } : undefined}>

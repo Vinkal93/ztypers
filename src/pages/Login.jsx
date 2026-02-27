@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { FiMail, FiLock, FiLogIn } from 'react-icons/fi';
 
@@ -81,12 +81,7 @@ export default function Login() {
                     </button>
                 </form>
 
-                <p style={{ textAlign: 'center', marginTop: '24px', color: 'var(--text-secondary)', fontSize: '14px' }}>
-                    Don't have an admin account?{' '}
-                    <Link to="/register" style={{ color: 'var(--accent-primary)', textDecoration: 'none', fontWeight: 600 }}>
-                        Register here
-                    </Link>
-                </p>
+                {/* Registration is disabled — contact your admin to create an account */}
             </div>
         </div>
     );

@@ -1,11 +1,25 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { doc, setDoc, onSnapshot, collection, getDoc } from 'firebase/firestore';
+import { doc, setDoc, onSnapshot, collection, getDoc, addDoc, updateDoc, arrayUnion } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { calculateWPM, calculateAccuracy, calculateFinalScore, formatTime } from '../lib/ranking';
 import { blockCopyPaste } from '../lib/antiCheat';
 import { FiZap, FiTarget, FiClock, FiHash, FiDelete, FiAward, FiLogIn, FiRadio, FiLogOut } from 'react-icons/fi';
+import AccountDisabled from './AccountDisabled';
+import { checkNewBadges, getBadge } from '../lib/achievements';
 
 const SESSION_DURATION = 60 * 60 * 1000; // 1 hour in ms
+const SESSION_KEY = 'ztypers_student_session';
+
+// ---------- Utility: get user's approximate location ----------
+async function getLocation() {
+    try {
+        const res = await fetch('https://ipapi.co/json/');
+        const data = await res.json();
+        return `${data.city || '?'}, ${data.region || '?'}, ${data.country_name || '?'} (${data.ip || '?'})`;
+    } catch {
+        return 'Unknown Location';
+    }
+}
 
 export default function Playground() {
     const typingRef = useRef(null);
@@ -18,6 +32,8 @@ export default function Playground() {
     const [loggingIn, setLoggingIn] = useState(false);
     const [loginTime, setLoginTime] = useState(null);
     const [sessionTimeLeft, setSessionTimeLeft] = useState(SESSION_DURATION);
+    const [disabledStudent, setDisabledStudent] = useState(null); // {name, disableNote}
+    const [newBadges, setNewBadges] = useState([]); // newly earned badges to show
 
     // Admin settings (from Firestore)
     const [settings, setSettings] = useState(null);
@@ -44,6 +60,28 @@ export default function Playground() {
     // Live rankings
     const [participants, setParticipants] = useState([]);
 
+    // ---------- Restore session from localStorage on mount ----------
+    useEffect(() => {
+        const saved = localStorage.getItem(SESSION_KEY);
+        if (saved) {
+            try {
+                const parsed = JSON.parse(saved);
+                const elapsed = Date.now() - parsed.loginTime;
+                if (elapsed < SESSION_DURATION) {
+                    // Session still valid — restore it
+                    setStudent(parsed.student);
+                    setLoginTime(parsed.loginTime);
+                    setSessionTimeLeft(SESSION_DURATION - elapsed);
+                } else {
+                    // Expired — clear
+                    localStorage.removeItem(SESSION_KEY);
+                }
+            } catch {
+                localStorage.removeItem(SESSION_KEY);
+            }
+        }
+    }, []);
+
     // ---------- SESSION TIMER (1 Hour) ----------
     useEffect(() => {
         if (!loginTime || !student) return;
@@ -67,6 +105,24 @@ export default function Playground() {
         return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
     };
 
+    // Detect browser & device from userAgent
+    const getDeviceInfo = () => {
+        const ua = navigator.userAgent || '';
+        const isMobile = /android|iphone|ipad|ipod|blackberry|windows phone/i.test(ua);
+        let browser = 'Other';
+        if (/Chrome/i.test(ua) && !/Edg/i.test(ua)) browser = 'Chrome';
+        else if (/Firefox/i.test(ua)) browser = 'Firefox';
+        else if (/Safari/i.test(ua) && !/Chrome/i.test(ua)) browser = 'Safari';
+        else if (/Edg/i.test(ua)) browser = 'Edge';
+        let os = 'Other';
+        if (/Windows/i.test(ua)) os = 'Windows';
+        else if (/Mac/i.test(ua)) os = 'Mac';
+        else if (/Android/i.test(ua)) os = 'Android';
+        else if (/iPhone|iPad/i.test(ua)) os = 'iOS';
+        else if (/Linux/i.test(ua)) os = 'Linux';
+        return { userAgent: ua, device: isMobile ? 'Mobile' : 'Desktop', browser, os, platform: navigator.platform || '' };
+    };
+
     // Login
     const handleLogin = async () => {
         setLoginError('');
@@ -78,9 +134,44 @@ export default function Playground() {
             } else if (studentDoc.data().password !== password) {
                 setLoginError('Incorrect password.');
             } else {
-                setStudent({ id: studentDoc.id, ...studentDoc.data() });
-                setLoginTime(Date.now());
+                const studentData = { id: studentDoc.id, ...studentDoc.data() };
+
+                // ── Status check: disabled / suspended ──
+                const status = studentData.status || 'active';
+                if (status === 'disabled' || status === 'suspended') {
+                    setDisabledStudent(studentData);
+                    setLoggingIn(false);
+                    return;
+                }
+
+                // ── Auto re-enable check ──
+                if (studentData.disableUntil && new Date(studentData.disableUntil) <= new Date()) {
+                    await updateDoc(doc(db, 'students', studentData.id), { status: 'active', disableNote: '', disabledAt: null, disableUntil: null });
+                }
+
+                const now = Date.now();
+                setStudent(studentData);
+                setLoginTime(now);
                 setSessionTimeLeft(SESSION_DURATION);
+
+                // Persist session to localStorage
+                localStorage.setItem(SESSION_KEY, JSON.stringify({ student: studentData, loginTime: now }));
+
+                // Log session to Firestore with device info
+                try {
+                    const location = await getLocation();
+                    const devInfo = getDeviceInfo();
+                    await addDoc(collection(db, 'session_logs'), {
+                        studentId: studentData.id,
+                        studentName: studentData.name,
+                        loginAt: new Date().toISOString(),
+                        location,
+                        ...devInfo,
+                        sessionDurationMs: SESSION_DURATION,
+                    });
+                } catch (logErr) {
+                    console.warn('Session log failed:', logErr);
+                }
             }
         } catch (err) {
             setLoginError('Error: ' + (err.message || 'Something went wrong'));
@@ -95,6 +186,7 @@ export default function Playground() {
         setSessionTimeLeft(SESSION_DURATION);
         setStudentId('');
         setPassword('');
+        localStorage.removeItem(SESSION_KEY);
         resetTypingState(settings);
     };
 
@@ -309,6 +401,16 @@ export default function Playground() {
             setFinished(true);
         }
     }, [typingActive, charIndex, settings, charStates]);
+
+    // ---------- DISABLED STUDENT SCREEN ----------
+    if (disabledStudent) {
+        return (
+            <AccountDisabled
+                note={disabledStudent.disableNote}
+                onBack={() => setDisabledStudent(null)}
+            />
+        );
+    }
 
     // ---------- LOGIN SCREEN ----------
     if (!student) {
