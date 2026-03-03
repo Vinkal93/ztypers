@@ -224,7 +224,21 @@ export default function UpcomingEvents() {
                                     }}>
                                         {ev.difficulty || 'Medium'}
                                     </span>
+                                    {/* Status indicator */}
+                                    {ev.status === 'live' && (
+                                        <span style={{
+                                            position: 'absolute', bottom: '12px', right: '14px',
+                                            padding: '3px 10px', borderRadius: 'var(--radius-full)',
+                                            background: 'rgba(239,68,68,0.3)', color: '#fff',
+                                            fontSize: '10px', fontWeight: 800, border: '1px solid rgba(239,68,68,0.5)',
+                                            animation: 'pulse 1.5s infinite', display: 'flex', alignItems: 'center', gap: '4px',
+                                        }}>
+                                            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#ef4444', display: 'inline-block' }} />
+                                            LIVE
+                                        </span>
+                                    )}
                                 </div>
+
 
                                 {/* ── LIVE COUNTDOWN ── */}
                                 {cd && !cd.expired && (

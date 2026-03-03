@@ -32,6 +32,8 @@ import Analytics from './pages/admin/Analytics';
 import AdminProfile from './pages/admin/AdminProfile';
 import EventManager from './pages/admin/EventManager';
 import EventAnalytics from './pages/admin/EventAnalytics';
+import SuperAdminLogin from './pages/admin/SuperAdminLogin';
+import SuperAdminDashboard from './pages/admin/SuperAdminDashboard';
 
 function AdminRoute({ children }) {
   const { user, isAdmin, loading } = useAuth();
@@ -87,6 +89,10 @@ export default function App() {
         <Route path="/admin/profile" element={<AdminRoute><AdminProfile /></AdminRoute>} />
         <Route path="/admin/events" element={<AdminRoute><EventManager /></AdminRoute>} />
         <Route path="/admin/event-analytics/:eventId" element={<AdminRoute><EventAnalytics /></AdminRoute>} />
+
+        {/* Super Admin (Hidden) */}
+        <Route path="/SU" element={<SuperAdminLogin />} />
+        <Route path="/SU/dashboard" element={<SuperAdminDashboard />} />
       </Routes>
     </>
   );

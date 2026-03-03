@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
+import { collection, onSnapshot, query, where, getDocs, updateDoc, doc } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
+import { useAuth } from '../../context/AuthContext';
 import { FiArrowLeft, FiClock, FiMapPin, FiUser, FiBarChart2, FiActivity, FiTrendingUp } from 'react-icons/fi';
 
 // Detect device type from userAgent
@@ -141,23 +142,51 @@ const ActivityHeatmap = ({ logs }) => {
 
 export default function Analytics() {
     const navigate = useNavigate();
+    const { userData } = useAuth();
     const [logs, setLogs] = useState([]);
     const [students, setStudents] = useState([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
     const [tab, setTab] = useState('overview'); // overview | sessions | devices | students
 
+    const instituteId = userData?.instituteId || '';
+
     useEffect(() => {
-        const q = query(collection(db, 'session_logs'), orderBy('loginAt', 'desc'));
-        const unsub1 = onSnapshot(q, snap => {
-            setLogs(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-            setLoading(false);
-        });
-        const unsub2 = onSnapshot(collection(db, 'students'), snap => {
-            setStudents(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-        });
-        return () => { unsub1(); unsub2(); };
-    }, []);
+        if (!instituteId) return;
+        let unsub1 = () => { }, unsub2 = () => { };
+        let cancelled = false;
+
+        (async () => {
+            // Migrate session_logs without instituteId
+            try {
+                const allSessions = await getDocs(collection(db, 'session_logs'));
+                const updates = [];
+                allSessions.docs.forEach(d => {
+                    if (!d.data().instituteId) {
+                        updates.push(updateDoc(doc(db, 'session_logs', d.id), { instituteId }));
+                    }
+                });
+                if (updates.length > 0) await Promise.all(updates);
+            } catch (err) { console.error('Session migration:', err); }
+
+            if (cancelled) return;
+
+            // Listen — no orderBy to avoid needing composite index, sort client-side
+            const q = query(collection(db, 'session_logs'), where('instituteId', '==', instituteId));
+            unsub1 = onSnapshot(q, snap => {
+                const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+                data.sort((a, b) => (b.loginAt || '').localeCompare(a.loginAt || ''));
+                setLogs(data);
+                setLoading(false);
+            });
+            const q2 = query(collection(db, 'students'), where('instituteId', '==', instituteId));
+            unsub2 = onSnapshot(q2, snap => {
+                setStudents(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+            });
+        })();
+
+        return () => { cancelled = true; unsub1(); unsub2(); };
+    }, [instituteId]);
 
     const formatDate = (iso) => {
         if (!iso) return '—';

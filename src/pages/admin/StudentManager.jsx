@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { collection, setDoc, getDocs, deleteDoc, doc, onSnapshot, updateDoc, getDoc } from 'firebase/firestore';
+import { collection, setDoc, getDocs, deleteDoc, doc, onSnapshot, updateDoc, getDoc, query, where } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
+import { useAuth } from '../../context/AuthContext';
 import {
     FiArrowLeft, FiUserPlus, FiTrash2, FiUsers, FiKey, FiCopy, FiCheck,
     FiEdit2, FiX, FiSave, FiLock, FiUnlock, FiAlertCircle, FiDownload,
@@ -14,17 +15,31 @@ function DisableModal({ student, onConfirm, onClose }) {
     const [days, setDays] = useState('');
     return (
         <div className="modal-overlay">
-            <div className="modal" style={{ maxWidth: '440px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-                    <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700 }}>
+            <div className="modal" style={{
+                maxWidth: '480px',
+                background: 'var(--bg-glass)',
+                backdropFilter: 'blur(24px)',
+                WebkitBackdropFilter: 'blur(24px)',
+                border: '1px solid var(--bg-glass-border)',
+                borderRadius: 'var(--radius-xl, 20px)',
+                boxShadow: '0 25px 60px rgba(0,0,0,0.3)',
+                padding: '28px',
+            }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+                    <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '10px' }}>
                         🔒 Disable: {student.name}
                     </h3>
-                    <button onClick={onClose} className="btn-icon"><FiX /></button>
+                    <button onClick={onClose} className="btn-icon" style={{
+                        width: '36px', height: '36px', borderRadius: '50%',
+                        background: 'var(--bg-input)', border: '1px solid var(--bg-glass-border)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+                    }}><FiX /></button>
                 </div>
 
                 <div className="form-group">
                     <label className="input-label">Status</label>
-                    <select className="input" value={status} onChange={e => setStatus(e.target.value)}>
+                    <select className="input" value={status} onChange={e => setStatus(e.target.value)}
+                        style={{ background: 'var(--bg-input)', color: 'var(--text-primary)' }}>
                         <option value="disabled">Disabled</option>
                         <option value="suspended">Suspended</option>
                     </select>
@@ -34,22 +49,24 @@ function DisableModal({ student, onConfirm, onClose }) {
                     <label className="input-label">Reason / Note for Student</label>
                     <textarea className="input" rows={3} value={note}
                         onChange={e => setNote(e.target.value)}
-                        placeholder="e.g. Misbehaviour during competition. Contact admin to re-enable." />
+                        placeholder="e.g. Misbehaviour during competition. Contact admin to re-enable."
+                        style={{ background: 'var(--bg-input)', color: 'var(--text-primary)' }} />
                 </div>
 
                 <div className="form-group">
                     <label className="input-label">Auto Re-enable After (days, optional)</label>
                     <input type="number" className="input" min={1} max={365}
                         value={days} onChange={e => setDays(e.target.value)}
-                        placeholder="e.g. 7 (leave blank for permanent)" />
+                        placeholder="e.g. 7 (leave blank for permanent)"
+                        style={{ background: 'var(--bg-input)', color: 'var(--text-primary)' }} />
                 </div>
 
-                <div style={{ display: 'flex', gap: '10px' }}>
+                <div style={{ display: 'flex', gap: '10px', marginTop: '8px' }}>
                     <button onClick={() => onConfirm({ status, note, days: days ? Number(days) : null })}
-                        className="btn btn-danger" style={{ flex: 1 }}>
+                        className="btn btn-danger" style={{ flex: 1, padding: '12px' }}>
                         <FiLock size={14} /> Disable Account
                     </button>
-                    <button onClick={onClose} className="btn btn-secondary">Cancel</button>
+                    <button onClick={onClose} className="btn btn-secondary" style={{ padding: '12px' }}>Cancel</button>
                 </div>
             </div>
         </div>
@@ -74,6 +91,7 @@ function StatusBadge({ status }) {
 
 export default function StudentManager() {
     const navigate = useNavigate();
+    const { userData } = useAuth();
     const [students, setStudents] = useState([]);
     const [loading, setLoading] = useState(true);
     const [showForm, setShowForm] = useState(false);
@@ -86,15 +104,41 @@ export default function StudentManager() {
     const [disableTarget, setDisableTarget] = useState(null);
     const [searchQ, setSearchQ] = useState('');
 
+    const instituteId = userData?.instituteId || '';
+
+    // Combined: migrate legacy students first, then subscribe filtered
     useEffect(() => {
-        const unsub = onSnapshot(collection(db, 'students'), (snap) => {
-            const list = snap.docs.map(d => ({ id: d.id, ...d.data() }))
-                .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
-            setStudents(list);
-            setLoading(false);
-        });
-        return () => unsub();
-    }, []);
+        if (!instituteId) return;
+        let unsub = () => { };
+        let cancelled = false;
+
+        (async () => {
+            // Step 1: Migrate students without instituteId
+            try {
+                const allSnap = await getDocs(collection(db, 'students'));
+                const updates = [];
+                allSnap.docs.forEach(d => {
+                    if (!d.data().instituteId) {
+                        updates.push(updateDoc(doc(db, 'students', d.id), { instituteId }));
+                    }
+                });
+                if (updates.length > 0) await Promise.all(updates);
+            } catch (err) { console.error('Student migration:', err); }
+
+            if (cancelled) return;
+
+            // Step 2: Now listen with filter
+            const q = query(collection(db, 'students'), where('instituteId', '==', instituteId));
+            unsub = onSnapshot(q, (snap) => {
+                const list = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+                    .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+                setStudents(list);
+                setLoading(false);
+            });
+        })();
+
+        return () => { cancelled = true; unsub(); };
+    }, [instituteId]);
 
     const generateId = async () => {
         const prefix = 'ZT';
@@ -138,6 +182,7 @@ export default function StudentManager() {
                 name: form.name, studentId: sid, password: pwd,
                 bestWPM: 0, totalCompetitions: 0, status: 'active',
                 badges: ['first_login'],
+                instituteId,
                 createdAt: new Date().toISOString(),
             });
             setForm({ name: '', studentId: '', password: '' });

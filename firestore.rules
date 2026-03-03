@@ -105,5 +105,12 @@ service cloud.firestore {
       allow read: if true;
       allow write: if true;
     }
+
+    // Super Admins — read-only (credentials checked at login)
+    match /super_admins/{saId} {
+      allow read: if true;
+      allow write: if false;
+    }
   }
 }
+
