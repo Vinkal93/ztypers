@@ -396,7 +396,7 @@ export default function StudentManager() {
                                                     <td>{s.totalCompetitions || 0}</td>
                                                     <td style={{ fontSize: '16px', letterSpacing: '2px' }}>{(s.badges || []).map(b => ({ first_login: '👋', speedster_50: '⚡', speedster_100: '🚀', speedster_150: '🔥', accuracy_100: '🎯', winner: '🏆', competitor_5: '🎮', competitor_10: '💪' })[b] || '').join(' ')}</td>
                                                     <td>
-                                                        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                                                        <div style={{ display: 'flex', gap: '6px', flexWrap: 'nowrap' }}>
                                                             <button onClick={() => startEdit(s)} className="btn btn-sm btn-secondary" title="Edit"><FiEdit2 size={14} /></button>
                                                             <button onClick={() => copyCredentials(s)} className="btn btn-sm btn-secondary" title="Copy credentials">
                                                                 {copied === s.id ? <FiCheck size={14} style={{ color: 'var(--accent-success)' }} /> : <FiCopy size={14} />}

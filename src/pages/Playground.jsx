@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { doc, setDoc, onSnapshot, collection, getDoc, addDoc, updateDoc, arrayUnion } from 'firebase/firestore';
+import { doc, setDoc, onSnapshot, collection, getDoc, addDoc, updateDoc, deleteDoc, arrayUnion } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { calculateWPM, calculateAccuracy, calculateFinalScore, formatTime } from '../lib/ranking';
 import { blockCopyPaste } from '../lib/antiCheat';
@@ -33,8 +33,9 @@ export default function Playground() {
     const [loggingIn, setLoggingIn] = useState(false);
     const [loginTime, setLoginTime] = useState(null);
     const [sessionTimeLeft, setSessionTimeLeft] = useState(SESSION_DURATION);
-    const [disabledStudent, setDisabledStudent] = useState(null); // {name, disableNote}
-    const [newBadges, setNewBadges] = useState([]); // newly earned badges to show
+    const [disabledStudent, setDisabledStudent] = useState(null);
+    const [newBadges, setNewBadges] = useState([]);
+    const [forceLoginPrompt, setForceLoginPrompt] = useState(false);
 
     // Admin settings (from Firestore)
     const [settings, setSettings] = useState(null);
@@ -68,13 +69,23 @@ export default function Playground() {
             try {
                 const parsed = JSON.parse(saved);
                 const elapsed = Date.now() - parsed.loginTime;
-                if (elapsed < SESSION_DURATION) {
-                    // Session still valid — restore it
-                    setStudent(parsed.student);
-                    setLoginTime(parsed.loginTime);
-                    setSessionTimeLeft(SESSION_DURATION - elapsed);
+                if (elapsed < SESSION_DURATION && parsed.deviceToken) {
+                    // Verify session is still valid in Firestore
+                    getDoc(doc(db, 'student_sessions', parsed.student.id)).then(snap => {
+                        if (snap.exists() && snap.data().deviceToken === parsed.deviceToken) {
+                            setStudent(parsed.student);
+                            setLoginTime(parsed.loginTime);
+                            setSessionTimeLeft(SESSION_DURATION - elapsed);
+                        } else {
+                            // Session was invalidated (another device logged in)
+                            localStorage.removeItem(SESSION_KEY);
+                        }
+                    }).catch(() => {
+                        setStudent(parsed.student);
+                        setLoginTime(parsed.loginTime);
+                        setSessionTimeLeft(SESSION_DURATION - elapsed);
+                    });
                 } else {
-                    // Expired — clear
                     localStorage.removeItem(SESSION_KEY);
                 }
             } catch {
@@ -124,10 +135,11 @@ export default function Playground() {
         return { userAgent: ua, device: isMobile ? 'Mobile' : 'Desktop', browser, os, platform: navigator.platform || '' };
     };
 
-    // Login
-    const handleLogin = async () => {
+    // Login with single-device enforcement
+    const handleLogin = async (forceOverride = false) => {
         setLoginError('');
         setLoggingIn(true);
+        setForceLoginPrompt(false);
         try {
             const studentDoc = await getDoc(doc(db, 'students', studentId.toUpperCase()));
             if (!studentDoc.exists()) {
@@ -150,15 +162,42 @@ export default function Playground() {
                     await updateDoc(doc(db, 'students', studentData.id), { status: 'active', disableNote: '', disabledAt: null, disableUntil: null });
                 }
 
+                // ── Single-device session check ──
+                const sessionRef = doc(db, 'student_sessions', studentData.id);
+                const existingSession = await getDoc(sessionRef);
+                if (existingSession.exists() && !forceOverride) {
+                    const sesData = existingSession.data();
+                    const sesAge = Date.now() - (sesData.loginAt || 0);
+                    if (sesAge < SESSION_DURATION) {
+                        // Active session on another device
+                        setForceLoginPrompt(true);
+                        setLoggingIn(false);
+                        return;
+                    }
+                }
+
                 const now = Date.now();
+                const deviceToken = `${now}_${Math.random().toString(36).slice(2, 10)}`;
+
+                // Register session in Firestore
+                await setDoc(sessionRef, {
+                    studentId: studentData.id,
+                    studentName: studentData.name,
+                    deviceToken,
+                    loginAt: now,
+                    device: getDeviceInfo().device,
+                    browser: getDeviceInfo().browser,
+                    updatedAt: new Date().toISOString(),
+                });
+
                 setStudent(studentData);
                 setLoginTime(now);
                 setSessionTimeLeft(SESSION_DURATION);
 
-                // Persist session to localStorage
-                localStorage.setItem(SESSION_KEY, JSON.stringify({ student: studentData, loginTime: now }));
+                // Persist session to localStorage with deviceToken
+                localStorage.setItem(SESSION_KEY, JSON.stringify({ student: studentData, loginTime: now, deviceToken }));
 
-                // Log session to Firestore with device info
+                // Log session to Firestore
                 try {
                     const location = await getLocation();
                     const devInfo = getDeviceInfo();
@@ -180,8 +219,13 @@ export default function Playground() {
         setLoggingIn(false);
     };
 
-    // Logout
-    const handleLogout = () => {
+    // Logout — clean up session
+    const handleLogout = async () => {
+        if (student) {
+            try {
+                await deleteDoc(doc(db, 'student_sessions', student.id));
+            } catch (e) { console.warn('Session cleanup failed:', e); }
+        }
         setStudent(null);
         setLoginTime(null);
         setSessionTimeLeft(SESSION_DURATION);
@@ -462,10 +506,33 @@ export default function Playground() {
                             value={password} onChange={e => setPassword(e.target.value)}
                             onKeyDown={e => e.key === 'Enter' && handleLogin()} />
                     </div>
-                    <button onClick={handleLogin} className="btn btn-primary" disabled={loggingIn || !studentId || !password}
+                    <button onClick={() => handleLogin()} className="btn btn-primary" disabled={loggingIn || !studentId || !password}
                         style={{ width: '100%', padding: '14px' }}>
                         {loggingIn ? 'Logging in...' : <><FiLogIn /> Join Playground</>}
                     </button>
+
+                    {/* Force Login Prompt */}
+                    {forceLoginPrompt && (
+                        <div style={{
+                            marginTop: '16px', padding: '16px', borderRadius: 'var(--radius-md)',
+                            background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)',
+                        }}>
+                            <div style={{ fontWeight: 700, fontSize: '14px', color: 'var(--accent-warning)', marginBottom: '8px' }}>
+                                ⚠️ Already Logged In on Another Device
+                            </div>
+                            <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '12px' }}>
+                                This account is currently active on another device. Continuing will log you out from the other device.
+                            </p>
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                                <button onClick={() => handleLogin(true)} className="btn btn-primary btn-sm" style={{ flex: 1 }}>
+                                    Login Here (Logout Other)
+                                </button>
+                                <button onClick={() => setForceLoginPrompt(false)} className="btn btn-secondary btn-sm">
+                                    Cancel
+                                </button>
+                            </div>
+                        </div>
+                    )}
                 </div>
             </div>
         );

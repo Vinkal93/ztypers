@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
-import { FiUser, FiShield, FiDroplet, FiSave, FiCheck, FiAlertCircle, FiImage, FiMail, FiPhone, FiEdit3 } from 'react-icons/fi';
+import { FiUser, FiShield, FiDroplet, FiSave, FiCheck, FiAlertCircle, FiImage, FiMail, FiPhone, FiEdit3, FiCreditCard, FiEye, FiEyeOff, FiKey } from 'react-icons/fi';
 
 const ACCENT_PRESETS = [
     { name: 'Ocean Blue', value: '#2563eb' },
@@ -40,6 +40,15 @@ export default function AdminProfile() {
     const [brandingSaving, setBrandingSaving] = useState(false);
     const [brandingMsg, setBrandingMsg] = useState('');
 
+    // Payment state
+    const [razorpayKeyId, setRazorpayKeyId] = useState('');
+    const [razorpayKeySecret, setRazorpayKeySecret] = useState('');
+    const [paymentMode, setPaymentMode] = useState('test');
+    const [showSecret, setShowSecret] = useState(false);
+    const [paymentSaving, setPaymentSaving] = useState(false);
+    const [paymentMsg, setPaymentMsg] = useState({ type: '', text: '' });
+    const [paymentLoaded, setPaymentLoaded] = useState(false);
+
     // Load initial data
     useEffect(() => {
         if (userData) {
@@ -54,14 +63,33 @@ export default function AdminProfile() {
         }
     }, [userData, institute]);
 
+    // Load payment settings when payment tab is selected
+    useEffect(() => {
+        if (activeTab === 'payment' && !paymentLoaded && userData?.instituteId) {
+            (async () => {
+                try {
+                    const payDoc = await getDoc(doc(db, 'institutes', userData.instituteId, 'settings', 'payment'));
+                    if (payDoc.exists()) {
+                        const data = payDoc.data();
+                        setRazorpayKeyId(data.razorpayKeyId || '');
+                        setRazorpayKeySecret(data.razorpayKeySecret || '');
+                        setPaymentMode(data.paymentMode || 'test');
+                    }
+                    setPaymentLoaded(true);
+                } catch (err) {
+                    console.error('Error loading payment settings:', err);
+                    setPaymentLoaded(true);
+                }
+            })();
+        }
+    }, [activeTab, paymentLoaded, userData]);
+
     // Save profile
     const handleSaveProfile = async () => {
         setProfileSaving(true);
         setProfileMsg('');
         try {
-            // Update user doc
             await setDoc(doc(db, 'users', user.uid), { name: profileName }, { merge: true });
-            // Update institute doc
             await updateInstitute({ name: instituteName, contactPhone, contactEmail });
             setProfileMsg('Profile updated successfully!');
             setTimeout(() => setProfileMsg(''), 3000);
@@ -107,27 +135,52 @@ export default function AdminProfile() {
         setBrandingSaving(false);
     };
 
+    // Save payment settings
+    const handleSavePayment = async () => {
+        if (!razorpayKeyId.trim()) {
+            setPaymentMsg({ type: 'error', text: 'Razorpay Key ID is required.' });
+            return;
+        }
+        setPaymentSaving(true);
+        setPaymentMsg({ type: '', text: '' });
+        try {
+            await setDoc(doc(db, 'institutes', userData.instituteId, 'settings', 'payment'), {
+                razorpayKeyId: razorpayKeyId.trim(),
+                razorpayKeySecret: razorpayKeySecret.trim(),
+                paymentMode,
+                updatedAt: new Date().toISOString(),
+                updatedBy: user.uid,
+            });
+            setPaymentMsg({ type: 'success', text: 'Payment settings saved securely!' });
+            setTimeout(() => setPaymentMsg({ type: '', text: '' }), 4000);
+        } catch (err) {
+            setPaymentMsg({ type: 'error', text: 'Error: ' + err.message });
+        }
+        setPaymentSaving(false);
+    };
+
     const tabs = [
         { id: 'profile', label: 'Profile', icon: <FiUser size={16} /> },
         { id: 'security', label: 'Security', icon: <FiShield size={16} /> },
         { id: 'branding', label: 'Branding', icon: <FiDroplet size={16} /> },
+        { id: 'payment', label: 'Payment', icon: <FiCreditCard size={16} /> },
     ];
 
     return (
         <div className="page-container fade-in">
             <div style={{ marginBottom: '32px' }}>
                 <h1 className="page-title">👤 Admin Profile</h1>
-                <p className="page-subtitle">Manage your account, security, and institute branding</p>
+                <p className="page-subtitle">Manage your account, security, branding, and payment settings</p>
             </div>
 
             {/* Tab Navigation */}
-            <div style={{ display: 'flex', gap: '4px', marginBottom: '24px', background: 'var(--bg-glass)', padding: '4px', borderRadius: 'var(--radius-lg)', border: '1px solid var(--bg-glass-border)', maxWidth: '500px' }}>
+            <div style={{ display: 'flex', gap: '4px', marginBottom: '24px', background: 'var(--bg-glass)', padding: '4px', borderRadius: 'var(--radius-lg)', border: '1px solid var(--bg-glass-border)', maxWidth: '600px', flexWrap: 'wrap' }}>
                 {tabs.map(t => (
                     <button key={t.id} onClick={() => setActiveTab(t.id)}
                         style={{
                             flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
                             padding: '12px 16px', borderRadius: 'var(--radius-md)', border: 'none', cursor: 'pointer',
-                            fontWeight: 700, fontSize: '13px', transition: 'all 0.2s ease',
+                            fontWeight: 700, fontSize: '13px', transition: 'all 0.2s ease', minWidth: '100px',
                             background: activeTab === t.id ? 'var(--accent-gradient)' : 'transparent',
                             color: activeTab === t.id ? '#fff' : 'var(--text-secondary)',
                         }}>
@@ -223,7 +276,6 @@ export default function AdminProfile() {
                         <FiDroplet /> Institute Branding
                     </h2>
 
-                    {/* Color Picker */}
                     <div className="form-group">
                         <label className="input-label">Accent Color</label>
                         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '12px' }}>
@@ -245,7 +297,6 @@ export default function AdminProfile() {
                         </div>
                     </div>
 
-                    {/* Color Preview */}
                     <div style={{ padding: '20px', borderRadius: 'var(--radius-lg)', marginBottom: '20px', background: `${accentColor}10`, border: `2px solid ${accentColor}30` }}>
                         <div style={{ fontWeight: 700, marginBottom: '8px', color: accentColor }}>Preview</div>
                         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
@@ -255,7 +306,6 @@ export default function AdminProfile() {
                         </div>
                     </div>
 
-                    {/* Logo URL */}
                     <div className="form-group">
                         <label className="input-label"><FiImage size={13} style={{ marginRight: '6px' }} />Logo URL</label>
                         <input type="url" className="input" value={logoUrl} onChange={e => setLogoUrl(e.target.value)} placeholder="https://example.com/logo.png" />
@@ -276,6 +326,110 @@ export default function AdminProfile() {
                         style={{ width: '100%', padding: '14px', marginTop: '8px' }}>
                         {brandingSaving ? 'Saving...' : <><FiSave /> Save Branding</>}
                     </button>
+                </div>
+            )}
+
+            {/* =================== PAYMENT TAB =================== */}
+            {activeTab === 'payment' && (
+                <div className="glass-card" style={{ maxWidth: '600px', padding: '32px' }}>
+                    <h2 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <FiCreditCard /> Payment Gateway Settings
+                    </h2>
+                    <p style={{ color: 'var(--text-muted)', fontSize: '13px', marginBottom: '24px' }}>
+                        Configure your Razorpay credentials securely. These keys are stored in your institute's private settings in Firebase.
+                    </p>
+
+                    {/* Security notice */}
+                    <div style={{
+                        padding: '14px 18px', borderRadius: 'var(--radius-md)', marginBottom: '24px',
+                        background: 'rgba(37,99,235,0.08)', border: '1px solid rgba(37,99,235,0.2)',
+                        display: 'flex', alignItems: 'flex-start', gap: '10px',
+                    }}>
+                        <FiShield size={18} style={{ color: 'var(--accent-primary)', flexShrink: 0, marginTop: '2px' }} />
+                        <div>
+                            <div style={{ fontWeight: 700, fontSize: '13px', color: 'var(--accent-primary)', marginBottom: '4px' }}>🔒 Secure Storage</div>
+                            <div style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                                Your API keys are stored in a secure Firestore subcollection linked to your institute ID. Only authenticated admins can access them.
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Mode selector */}
+                    <div className="form-group">
+                        <label className="input-label">Environment Mode</label>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                            {[{ id: 'test', label: '🧪 Test Mode', desc: 'For development' }, { id: 'live', label: '🟢 Live Mode', desc: 'Real payments' }].map(m => (
+                                <button key={m.id} onClick={() => setPaymentMode(m.id)}
+                                    style={{
+                                        flex: 1, padding: '14px', borderRadius: 'var(--radius-md)', border: paymentMode === m.id ? '2px solid var(--accent-primary)' : '1px solid var(--bg-glass-border)',
+                                        background: paymentMode === m.id ? 'var(--accent-gradient-light)' : 'var(--bg-input)',
+                                        cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s ease',
+                                    }}>
+                                    <div style={{ fontWeight: 700, fontSize: '13px', color: paymentMode === m.id ? 'var(--accent-primary)' : 'var(--text-primary)' }}>{m.label}</div>
+                                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>{m.desc}</div>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* API Key ID */}
+                    <div className="form-group">
+                        <label className="input-label"><FiKey size={13} style={{ marginRight: '6px' }} />Razorpay Key ID *</label>
+                        <input type="text" className="input" value={razorpayKeyId} onChange={e => setRazorpayKeyId(e.target.value)}
+                            placeholder={paymentMode === 'test' ? 'rzp_test_xxxxxxxxxxxx' : 'rzp_live_xxxxxxxxxxxx'}
+                            style={{ fontFamily: 'var(--font-mono)', fontSize: '13px' }} />
+                    </div>
+
+                    {/* API Key Secret */}
+                    <div className="form-group">
+                        <label className="input-label"><FiKey size={13} style={{ marginRight: '6px' }} />Razorpay Key Secret</label>
+                        <div style={{ position: 'relative' }}>
+                            <input type={showSecret ? 'text' : 'password'} className="input" value={razorpayKeySecret}
+                                onChange={e => setRazorpayKeySecret(e.target.value)}
+                                placeholder="Enter your secret key"
+                                style={{ fontFamily: 'var(--font-mono)', fontSize: '13px', paddingRight: '50px' }} />
+                            <button onClick={() => setShowSecret(!showSecret)}
+                                style={{
+                                    position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)',
+                                    background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)',
+                                    padding: '8px',
+                                }}>
+                                {showSecret ? <FiEyeOff size={16} /> : <FiEye size={16} />}
+                            </button>
+                        </div>
+                        <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
+                            The secret is used for server-side payment verification. Keep it safe.
+                        </span>
+                    </div>
+
+                    {paymentMsg.text && (
+                        <div style={{
+                            padding: '12px', borderRadius: 'var(--radius-md)', marginBottom: '16px',
+                            background: paymentMsg.type === 'error' ? 'rgba(239,68,68,0.1)' : 'rgba(5,150,105,0.1)',
+                            border: `1px solid ${paymentMsg.type === 'error' ? 'rgba(239,68,68,0.3)' : 'rgba(5,150,105,0.3)'}`,
+                            color: paymentMsg.type === 'error' ? 'var(--accent-danger)' : 'var(--accent-success)',
+                            fontSize: '13px', display: 'flex', alignItems: 'center', gap: '8px',
+                        }}>
+                            {paymentMsg.type === 'error' ? <FiAlertCircle /> : <FiCheck />} {paymentMsg.text}
+                        </div>
+                    )}
+
+                    <button onClick={handleSavePayment} className="btn btn-primary" disabled={paymentSaving || !razorpayKeyId.trim()}
+                        style={{ width: '100%', padding: '14px', marginTop: '8px' }}>
+                        {paymentSaving ? 'Saving...' : <><FiSave /> Save Payment Settings</>}
+                    </button>
+
+                    {/* How to get keys section */}
+                    <div style={{ marginTop: '24px', padding: '18px', background: 'var(--bg-input)', borderRadius: 'var(--radius-md)' }}>
+                        <div style={{ fontWeight: 700, fontSize: '13px', marginBottom: '8px' }}>📖 How to get your Razorpay keys?</div>
+                        <ol style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.8, paddingLeft: '18px', margin: 0 }}>
+                            <li>Go to <a href="https://dashboard.razorpay.com" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-primary)', fontWeight: 600 }}>dashboard.razorpay.com</a></li>
+                            <li>Navigate to <strong>Settings → API Keys</strong></li>
+                            <li>Generate a new key pair (Test or Live)</li>
+                            <li>Copy the <strong>Key ID</strong> and <strong>Key Secret</strong></li>
+                            <li>Paste them here and click <strong>Save</strong></li>
+                        </ol>
+                    </div>
                 </div>
             )}
         </div>

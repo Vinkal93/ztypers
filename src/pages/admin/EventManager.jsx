@@ -20,7 +20,7 @@ export default function EventManager() {
     const [description, setDescription] = useState('');
     const [eventDate, setEventDate] = useState('');
     const [eventTime, setEventTime] = useState('');
-    const [duration, setDuration] = useState(60);
+    const [duration, setDuration] = useState(1);
     const [prize, setPrize] = useState('');
     const [difficulty, setDifficulty] = useState('Medium');
     const [maxParticipants, setMaxParticipants] = useState('');
@@ -43,7 +43,7 @@ export default function EventManager() {
 
     const resetForm = () => {
         setTitle(''); setDescription(''); setEventDate(''); setEventTime('');
-        setDuration(60); setPrize(''); setDifficulty('Medium'); setMaxParticipants('');
+        setDuration(1); setPrize(''); setDifficulty('Medium'); setMaxParticipants('');
         setEntryFee(''); setPublished(false); setScheduledStart('');
         setEditingId(null); setShowForm(false);
     };
@@ -53,7 +53,7 @@ export default function EventManager() {
         setDescription(ev.description || '');
         setEventDate(ev.eventDate || '');
         setEventTime(ev.eventTime || '');
-        setDuration(ev.duration || 60);
+        setDuration(ev.duration ? ev.duration / 60 : 1);
         setPrize(ev.prize || '');
         setDifficulty(ev.difficulty || 'Medium');
         setMaxParticipants(ev.maxParticipants || '');
@@ -72,7 +72,7 @@ export default function EventManager() {
             description: description.trim(),
             eventDate,
             eventTime,
-            duration: Number(duration) || 60,
+            duration: (Number(duration) || 1) * 60,
             prize: prize ? Number(prize) : 0,
             difficulty,
             maxParticipants: maxParticipants ? Number(maxParticipants) : 0,
@@ -169,8 +169,8 @@ export default function EventManager() {
 
                     <div className="form-row">
                         <div className="form-group">
-                            <label className="input-label"><FiClock size={13} style={{ marginRight: '4px' }} />Duration (seconds)</label>
-                            <input type="number" className="input" value={duration} onChange={e => setDuration(e.target.value)} min={10} />
+                            <label className="input-label"><FiClock size={13} style={{ marginRight: '4px' }} />Duration (minutes)</label>
+                            <input type="number" className="input" value={duration} onChange={e => setDuration(e.target.value)} min={1} step={0.5} />
                         </div>
                         <div className="form-group">
                             <label className="input-label"><FiDollarSign size={13} style={{ marginRight: '4px' }} />Prize (₹)</label>
@@ -253,7 +253,7 @@ export default function EventManager() {
                                 <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', fontSize: '12px', color: 'var(--text-muted)' }}>
                                     <span><FiCalendar size={12} style={{ marginRight: '4px' }} />{formatDate(ev.eventDate)}</span>
                                     {ev.eventTime && <span><FiClock size={12} style={{ marginRight: '4px' }} />{ev.eventTime}</span>}
-                                    <span><FiClock size={12} style={{ marginRight: '4px' }} />{ev.duration}s</span>
+                                    <span><FiClock size={12} style={{ marginRight: '4px' }} />{ev.duration >= 60 ? `${Math.round(ev.duration / 60)} min` : `${ev.duration}s`}</span>
                                     {ev.prize > 0 && <span style={{ color: 'var(--rank-gold)', fontWeight: 700 }}>₹{ev.prize}</span>}
                                     {ev.entryFee > 0 && <span>Entry: ₹{ev.entryFee}</span>}
                                     {ev.scheduledStart && <span><FiZap size={12} style={{ marginRight: '4px' }} />Auto: {new Date(ev.scheduledStart).toLocaleString()}</span>}

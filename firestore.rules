@@ -80,6 +80,18 @@ service cloud.firestore {
     match /institutes/{instituteId} {
       allow read: if true;
       allow write: if request.auth != null;
+
+      // Institute settings (payment keys, etc.) — only authenticated admin
+      match /settings/{settingId} {
+        allow read: if request.auth != null;
+        allow write: if request.auth != null;
+      }
+    }
+
+    // Student Sessions — for single-device login enforcement
+    match /student_sessions/{sessionId} {
+      allow read: if true;
+      allow write: if true;
     }
 
     // Events — anyone can read, only authenticated admins can write

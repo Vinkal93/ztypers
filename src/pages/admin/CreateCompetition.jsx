@@ -1,9 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { collection, addDoc } from 'firebase/firestore';
+import { collection, addDoc, onSnapshot } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { paragraphs } from '../../constants/theme';
-import { FiSave, FiArrowLeft, FiClock, FiDollarSign, FiFileText, FiType, FiDelete } from 'react-icons/fi';
+import { FiSave, FiArrowLeft, FiClock, FiDollarSign, FiFileText, FiType, FiDelete, FiUsers, FiFilter } from 'react-icons/fi';
 
 export default function CreateCompetition() {
     const navigate = useNavigate();
@@ -19,7 +19,41 @@ export default function CreateCompetition() {
         backspaceEnabled: true,
     });
 
+    // Batch & Student targeting
+    const [batches, setBatches] = useState([]);
+    const [students, setStudents] = useState([]);
+    const [targetMode, setTargetMode] = useState('all'); // all | batch | students
+    const [selectedBatches, setSelectedBatches] = useState([]);
+    const [selectedStudents, setSelectedStudents] = useState([]);
+
+    // Load batches & students
+    useEffect(() => {
+        const unsub1 = onSnapshot(collection(db, 'batches'), snap => {
+            setBatches(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        });
+        const unsub2 = onSnapshot(collection(db, 'students'), snap => {
+            setStudents(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        });
+        return () => { unsub1(); unsub2(); };
+    }, []);
+
     const update = (key, value) => setForm(prev => ({ ...prev, [key]: value }));
+
+    const toggleBatch = (batchId) => {
+        setSelectedBatches(prev =>
+            prev.includes(batchId) ? prev.filter(b => b !== batchId) : [...prev, batchId]
+        );
+    };
+
+    const toggleStudent = (studentId) => {
+        setSelectedStudents(prev =>
+            prev.includes(studentId) ? prev.filter(s => s !== studentId) : [...prev, studentId]
+        );
+    };
+
+    const filteredStudents = targetMode === 'batch' && selectedBatches.length > 0
+        ? students.filter(s => selectedBatches.includes(s.batch))
+        : students;
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -36,15 +70,18 @@ export default function CreateCompetition() {
                 backspaceEnabled: form.backspaceEnabled,
                 status: 'upcoming',
                 createdAt: new Date().toISOString(),
+                // Targeting info
+                targetMode,
+                targetBatches: targetMode === 'batch' ? selectedBatches : [],
+                targetStudents: targetMode === 'students' ? selectedStudents : [],
             };
-            console.log('Creating competition:', compData);
             const docRef = await addDoc(collection(db, 'competitions'), compData);
             console.log('Competition created with ID:', docRef.id);
             navigate('/admin');
         } catch (err) {
             console.error('Error creating competition:', err);
             if (err.code === 'permission-denied') {
-                setError('❌ Firestore permission denied! Go to Firebase Console → Firestore → Rules and set rules to allow read/write.');
+                setError('❌ Firestore permission denied! Go to Firebase Console → Firestore → Rules and allow read/write.');
             } else {
                 setError(`Error: ${err.message || err.code || 'Unknown error'}`);
             }
@@ -130,6 +167,96 @@ export default function CreateCompetition() {
                                     : '❌ Students CANNOT use backspace — no corrections allowed'}
                             </span>
                         </div>
+                    </div>
+
+                    {/* ── Target Selection ── */}
+                    <div className="form-group">
+                        <label className="input-label"><FiFilter style={{ marginRight: '6px' }} />Target Participants</label>
+                        <div style={{ display: 'flex', gap: '6px', marginBottom: '12px' }}>
+                            {[
+                                { id: 'all', label: '🌐 All Students', desc: 'Open to everyone' },
+                                { id: 'batch', label: '📦 By Batch', desc: 'Select specific batches' },
+                                { id: 'students', label: '👤 Specific Students', desc: 'Hand-pick students' },
+                            ].map(m => (
+                                <button key={m.id} type="button" onClick={() => setTargetMode(m.id)}
+                                    style={{
+                                        flex: 1, padding: '12px 8px', borderRadius: 'var(--radius-md)', cursor: 'pointer',
+                                        border: targetMode === m.id ? '2px solid var(--accent-primary)' : '1px solid var(--bg-glass-border)',
+                                        background: targetMode === m.id ? 'var(--accent-gradient-light)' : 'var(--bg-input)',
+                                        textAlign: 'center', transition: 'all 0.2s ease',
+                                    }}>
+                                    <div style={{ fontSize: '13px', fontWeight: 700, color: targetMode === m.id ? 'var(--accent-primary)' : 'var(--text-primary)' }}>{m.label}</div>
+                                    <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px' }}>{m.desc}</div>
+                                </button>
+                            ))}
+                        </div>
+
+                        {/* Batch selector */}
+                        {targetMode === 'batch' && (
+                            <div style={{ marginBottom: '12px' }}>
+                                <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '8px' }}>
+                                    Select batches ({selectedBatches.length} selected):
+                                </div>
+                                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                                    {batches.length === 0 ? (
+                                        <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>No batches found. Create batches from Student Manager first.</span>
+                                    ) : batches.map(b => (
+                                        <button key={b.id} type="button" onClick={() => toggleBatch(b.id)}
+                                            style={{
+                                                padding: '8px 16px', borderRadius: 'var(--radius-full)', cursor: 'pointer',
+                                                fontSize: '12px', fontWeight: 600, transition: 'all 0.2s ease',
+                                                background: selectedBatches.includes(b.id) ? 'var(--accent-primary)' : 'var(--bg-input)',
+                                                color: selectedBatches.includes(b.id) ? '#fff' : 'var(--text-secondary)',
+                                                border: selectedBatches.includes(b.id) ? '1px solid var(--accent-primary)' : '1px solid var(--bg-glass-border)',
+                                            }}>
+                                            {selectedBatches.includes(b.id) ? '✓ ' : ''}{b.name || b.id}
+                                        </button>
+                                    ))}
+                                </div>
+                                {selectedBatches.length > 0 && (
+                                    <div style={{ fontSize: '11px', color: 'var(--accent-success)', marginTop: '6px', fontWeight: 600 }}>
+                                        {filteredStudents.length} student(s) from selected batches
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Student selector */}
+                        {targetMode === 'students' && (
+                            <div style={{ marginBottom: '12px' }}>
+                                <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '8px' }}>
+                                    Select students ({selectedStudents.length} selected):
+                                </div>
+                                <div style={{ maxHeight: '200px', overflowY: 'auto', border: '1px solid var(--bg-glass-border)', borderRadius: 'var(--radius-md)', padding: '8px' }}>
+                                    {students.length === 0 ? (
+                                        <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>No students found.</span>
+                                    ) : students.map(s => (
+                                        <label key={s.id}
+                                            style={{
+                                                display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 10px',
+                                                borderRadius: 'var(--radius-sm)', cursor: 'pointer', transition: 'background 0.2s',
+                                                background: selectedStudents.includes(s.id) ? 'var(--accent-gradient-light)' : 'transparent',
+                                            }}
+                                            onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
+                                            onMouseLeave={e => e.currentTarget.style.background = selectedStudents.includes(s.id) ? 'var(--accent-gradient-light)' : 'transparent'}>
+                                            <input type="checkbox" checked={selectedStudents.includes(s.id)}
+                                                onChange={() => toggleStudent(s.id)}
+                                                style={{ accentColor: 'var(--accent-primary)', width: '16px', height: '16px' }} />
+                                            <div>
+                                                <div style={{ fontWeight: 600, fontSize: '13px' }}>{s.name}</div>
+                                                <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{s.studentId} • {s.batch || 'No batch'}</div>
+                                            </div>
+                                        </label>
+                                    ))}
+                                </div>
+                                <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
+                                    <button type="button" onClick={() => setSelectedStudents(students.map(s => s.id))}
+                                        className="btn btn-sm btn-secondary" style={{ fontSize: '11px' }}>Select All</button>
+                                    <button type="button" onClick={() => setSelectedStudents([])}
+                                        className="btn btn-sm btn-secondary" style={{ fontSize: '11px' }}>Deselect All</button>
+                                </div>
+                            </div>
+                        )}
                     </div>
 
                     <div className="form-group">

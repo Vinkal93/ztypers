@@ -280,6 +280,7 @@ select.input option {
   max-width: 1400px;
   margin: 0 auto;
   padding: 32px 24px;
+  padding-top: 40px;
 }
 
 .page-header {
@@ -1043,6 +1044,7 @@ select.input option {
   left: -300px;
   width: 280px;
   height: 100vh;
+  height: 100dvh;
   background: var(--bg-secondary);
   z-index: 300;
   transition: left 0.3s ease;
@@ -1067,7 +1069,9 @@ select.input option {
 .sidebar-content {
   flex: 1;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   padding: 12px;
+  padding-bottom: 40px;
 }
 
 .sidebar-link {

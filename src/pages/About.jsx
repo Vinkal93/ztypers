@@ -71,7 +71,8 @@ export default function About() {
                     </p>
                 </div>
             </div>
-
+            
+                
             {/* Skills */}
             <div className="glass-card" style={{ marginBottom: '32px' }}>
                 <h2 style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: '22px', marginBottom: '20px', textAlign: 'center' }}>
