@@ -179,7 +179,15 @@ export function AuthProvider({ children }) {
         }
     };
 
-    const isAdmin = () => userData?.role === 'admin';
+    const isAdmin = () => userData?.role === 'admin' || userData?.role === 'superadmin';
+
+    const isSuperAdmin = async () => {
+        if (!user) return false;
+        try {
+            const token = await user.getIdTokenResult();
+            return token.claims.role === 'superadmin';
+        } catch { return false; }
+    };
 
     const value = {
         user,
@@ -190,6 +198,7 @@ export function AuthProvider({ children }) {
         register,
         logout,
         isAdmin,
+        isSuperAdmin,
         changePassword,
         updateInstitute,
         fetchInstitute,

@@ -217,18 +217,23 @@ export default function EventManager() {
 
     const instituteId = userData?.instituteId || '';
 
-    // Combined: migrate legacy events first, then subscribe filtered
+    // Combined: migrate legacy + orphaned events first, then subscribe filtered
     useEffect(() => {
-        if (!instituteId) return;
+        if (!instituteId) { setLoading(false); return; }
         let unsub = () => { };
         let cancelled = false;
 
         (async () => {
             try {
-                const allSnap = await getDocs(collection(db, 'events'));
+                const [allSnap, instSnap] = await Promise.all([
+                    getDocs(collection(db, 'events')),
+                    getDocs(collection(db, 'institutes')),
+                ]);
+                const validIds = new Set(instSnap.docs.map(d => d.id));
                 const updates = [];
                 allSnap.docs.forEach(d => {
-                    if (!d.data().instituteId) {
+                    const data = d.data();
+                    if (!data.instituteId || !validIds.has(data.instituteId)) {
                         updates.push(updateDoc(doc(db, 'events', d.id), { instituteId }));
                     }
                 });
@@ -242,6 +247,9 @@ export default function EventManager() {
                 const evts = snap.docs.map(d => ({ id: d.id, ...d.data() }));
                 evts.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
                 setEvents(evts);
+                setLoading(false);
+            }, (err) => {
+                console.error('Event listener error:', err);
                 setLoading(false);
             });
         })();

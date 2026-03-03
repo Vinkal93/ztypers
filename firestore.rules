@@ -69,10 +69,11 @@ service cloud.firestore {
       allow write: if true;
     }
 
-    // Session logs — public write (students have no Firebase auth), admin read/delete
+    // Session logs — public write (students have no Firebase auth), admin read/update/delete
     match /session_logs/{logId} {
       allow read: if true;
       allow create: if true;
+      allow update: if request.auth != null;
       allow delete: if request.auth != null;
     }
 
@@ -106,11 +107,21 @@ service cloud.firestore {
       allow write: if true;
     }
 
-    // Super Admins — read-only (credentials checked at login)
-    match /super_admins/{saId} {
+    // Super Admin data — only superadmin role via custom claims
+    match /superadminData/{doc} {
+      allow read, write: if request.auth != null && request.auth.token.role == "superadmin";
+    }
+
+    // Admin Activity Logs — superadmin read, Cloud Functions write
+    match /adminLogs/{logId} {
+      allow read: if request.auth != null && request.auth.token.role == "superadmin";
+      allow write: if false; // Only Cloud Functions can write
+    }
+
+    // App Config — superadmin controls
+    match /appConfig/{configId} {
       allow read: if true;
-      allow write: if false;
+      allow write: if request.auth != null && request.auth.token.role == "superadmin";
     }
   }
 }
-

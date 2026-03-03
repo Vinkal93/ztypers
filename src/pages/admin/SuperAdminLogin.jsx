@@ -1,293 +1,263 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { collection, query, where, getDocs } from 'firebase/firestore';
-import { db } from '../../lib/firebase';
-import { FiShield, FiLogIn, FiAlertCircle, FiLock } from 'react-icons/fi';
+import { signInWithEmailAndPassword } from 'firebase/auth';
+import { auth } from '../../lib/firebase';
+import { FiShield, FiMail, FiLock, FiAlertTriangle, FiEye, FiEyeOff } from 'react-icons/fi';
 
+const LOCKOUT_KEY = 'su_lockout';
 const MAX_ATTEMPTS = 5;
-const LOCKOUT_DURATIONS = [30, 60, 120, 300]; // seconds for 1st, 2nd, 3rd, 4th+ lockout
 
-function getLockoutState() {
+function getLockout() {
     try {
-        const raw = localStorage.getItem('su_lockout');
-        if (!raw) return null;
-        return JSON.parse(raw);
-    } catch { return null; }
+        const data = JSON.parse(localStorage.getItem(LOCKOUT_KEY) || '{}');
+        return { attempts: data.attempts || 0, lockedUntil: data.lockedUntil || 0 };
+    } catch { return { attempts: 0, lockedUntil: 0 }; }
 }
 
-function setLockoutState(state) {
-    localStorage.setItem('su_lockout', JSON.stringify(state));
+function setLockout(attempts, cooldownMs = 0) {
+    localStorage.setItem(LOCKOUT_KEY, JSON.stringify({
+        attempts,
+        lockedUntil: cooldownMs ? Date.now() + cooldownMs : 0,
+    }));
 }
+
+// Progressive cooldowns: 30s, 1m, 5m, 15m, 30m
+const COOLDOWNS = [30000, 60000, 300000, 900000, 1800000];
 
 export default function SuperAdminLogin() {
     const navigate = useNavigate();
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
+    const [showPw, setShowPw] = useState(false);
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
-    const [attempts, setAttempts] = useState(0);
-    const [lockoutEnd, setLockoutEnd] = useState(null);
-    const [lockoutCount, setLockoutCount] = useState(0);
-    const [remaining, setRemaining] = useState(0);
+    const [lockCountdown, setLockCountdown] = useState(0);
 
-    // Restore lockout state on mount
+    // Check lockout timer
     useEffect(() => {
-        const state = getLockoutState();
-        if (state) {
-            setAttempts(state.attempts || 0);
-            setLockoutCount(state.lockoutCount || 0);
-            if (state.lockoutEnd) {
-                const end = new Date(state.lockoutEnd);
-                if (end > new Date()) {
-                    setLockoutEnd(end);
-                } else {
-                    // Lockout expired, reset attempts but keep lockout count
-                    setAttempts(0);
-                    setLockoutState({ ...state, attempts: 0, lockoutEnd: null });
-                }
-            }
-        }
-    }, []);
-
-    // Countdown timer
-    useEffect(() => {
-        if (!lockoutEnd) { setRemaining(0); return; }
         const tick = () => {
-            const diff = Math.max(0, Math.ceil((lockoutEnd - new Date()) / 1000));
-            setRemaining(diff);
-            if (diff <= 0) {
-                setLockoutEnd(null);
-                setAttempts(0);
-                const state = getLockoutState();
-                setLockoutState({ ...state, attempts: 0, lockoutEnd: null });
+            const { lockedUntil } = getLockout();
+            if (lockedUntil > Date.now()) {
+                setLockCountdown(Math.ceil((lockedUntil - Date.now()) / 1000));
+            } else {
+                setLockCountdown(0);
             }
         };
         tick();
-        const interval = setInterval(tick, 1000);
-        return () => clearInterval(interval);
-    }, [lockoutEnd]);
+        const id = setInterval(tick, 1000);
+        return () => clearInterval(id);
+    }, []);
 
-    const isLocked = lockoutEnd && remaining > 0;
-
-    const formatTime = (s) => {
-        const m = Math.floor(s / 60);
-        const sec = s % 60;
-        return m > 0 ? `${m}:${String(sec).padStart(2, '0')}` : `${sec}s`;
-    };
+    // Check if already logged in as superadmin
+    useEffect(() => {
+        const checkAuth = async () => {
+            if (auth.currentUser) {
+                const token = await auth.currentUser.getIdTokenResult();
+                if (token.claims.role === 'superadmin') {
+                    navigate('/SU/dashboard', { replace: true });
+                }
+            }
+        };
+        checkAuth();
+    }, [navigate]);
 
     const handleLogin = async (e) => {
         e.preventDefault();
-        if (isLocked || !email.trim() || !password.trim()) return;
-        setLoading(true);
         setError('');
-        try {
-            const q = query(collection(db, 'super_admins'), where('email', '==', email.trim()), where('password', '==', password.trim()));
-            const snap = await getDocs(q);
-            if (snap.empty) {
-                const newAttempts = attempts + 1;
-                setAttempts(newAttempts);
 
+        // Check lockout
+        const { attempts, lockedUntil } = getLockout();
+        if (lockedUntil > Date.now()) {
+            setError('Account locked. Please wait.');
+            return;
+        }
+
+        if (!email.trim() || !password.trim()) {
+            setError('Enter email and password');
+            return;
+        }
+
+        setLoading(true);
+        try {
+            // Sign in with Firebase Auth
+            const result = await signInWithEmailAndPassword(auth, email.trim(), password);
+
+            // Force token refresh to get latest claims
+            const tokenResult = await result.user.getIdTokenResult(true);
+
+            // Check for superadmin role in custom claims
+            if (tokenResult.claims.role !== 'superadmin') {
+                setError('⛔ Access Denied — You are not a Super Admin');
+                // Sign out so they don't stay logged in as wrong role
+                await auth.signOut();
+                const newAttempts = attempts + 1;
                 if (newAttempts >= MAX_ATTEMPTS) {
-                    // Lockout
-                    const newLockoutCount = lockoutCount + 1;
-                    const durationIdx = Math.min(newLockoutCount - 1, LOCKOUT_DURATIONS.length - 1);
-                    const lockSec = LOCKOUT_DURATIONS[durationIdx];
-                    const end = new Date(Date.now() + lockSec * 1000);
-                    setLockoutEnd(end);
-                    setLockoutCount(newLockoutCount);
-                    setLockoutState({ attempts: newAttempts, lockoutEnd: end.toISOString(), lockoutCount: newLockoutCount });
-                    setError(`🔒 Too many failed attempts! Locked for ${formatTime(lockSec)}.`);
+                    const cooldown = COOLDOWNS[Math.min(Math.floor(newAttempts / MAX_ATTEMPTS) - 1, COOLDOWNS.length - 1)];
+                    setLockout(newAttempts, cooldown);
                 } else {
-                    setLockoutState({ attempts: newAttempts, lockoutEnd: null, lockoutCount });
-                    setError(`Invalid credentials. ${MAX_ATTEMPTS - newAttempts} attempt${MAX_ATTEMPTS - newAttempts !== 1 ? 's' : ''} remaining.`);
+                    setLockout(newAttempts);
                 }
                 setLoading(false);
                 return;
             }
-            // Success — reset lockout state
-            localStorage.removeItem('su_lockout');
-            const suData = snap.docs[0].data();
-            sessionStorage.setItem('su_session', JSON.stringify({
-                id: snap.docs[0].id,
-                email: suData.email,
-                name: suData.name || 'Super Admin',
-                loginAt: new Date().toISOString(),
-            }));
-            navigate('/SU/dashboard');
+
+            // SUCCESS — clear lockout, navigate
+            setLockout(0);
+            navigate('/SU/dashboard', { replace: true });
         } catch (err) {
-            setError('Error: ' + err.message);
+            const newAttempts = attempts + 1;
+            if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
+                setError('Invalid credentials');
+            } else if (err.code === 'auth/too-many-requests') {
+                setError('Too many attempts. Try again later.');
+            } else {
+                setError(err.message || 'Login failed');
+            }
+            if (newAttempts >= MAX_ATTEMPTS) {
+                const cooldown = COOLDOWNS[Math.min(Math.floor(newAttempts / MAX_ATTEMPTS) - 1, COOLDOWNS.length - 1)];
+                setLockout(newAttempts, cooldown);
+            } else {
+                setLockout(newAttempts);
+            }
         }
         setLoading(false);
     };
 
+    const formatTime = (s) => {
+        const m = Math.floor(s / 60);
+        const sec = s % 60;
+        return m > 0 ? `${m}m ${sec}s` : `${sec}s`;
+    };
+
     return (
         <div style={{
-            minHeight: '100vh', display: 'flex', justifyContent: 'center', alignItems: 'center',
-            background: 'linear-gradient(135deg, #0f0f23 0%, #1a1a3e 30%, #0d0d1f 100%)',
+            minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: 'linear-gradient(145deg, #0a0a0f 0%, #0d1117 50%, #161b22 100%)',
+            fontFamily: "'Inter', system-ui, -apple-system, sans-serif",
             padding: '20px',
         }}>
-            {/* Animated background orbs */}
-            <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none', overflow: 'hidden', zIndex: 0 }}>
-                <div style={{
-                    position: 'absolute', width: '400px', height: '400px', borderRadius: '50%',
-                    background: 'radial-gradient(circle, rgba(139,92,246,0.15) 0%, transparent 70%)',
-                    top: '-100px', right: '-100px', animation: 'float 8s ease-in-out infinite',
-                }} />
-                <div style={{
-                    position: 'absolute', width: '300px', height: '300px', borderRadius: '50%',
-                    background: 'radial-gradient(circle, rgba(59,130,246,0.12) 0%, transparent 70%)',
-                    bottom: '-50px', left: '-50px', animation: 'float 10s ease-in-out infinite reverse',
-                }} />
-            </div>
-
             <div style={{
-                width: '100%', maxWidth: '420px', position: 'relative', zIndex: 1,
-                background: 'rgba(15,15,35,0.8)',
-                backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)',
-                border: '1px solid rgba(139,92,246,0.2)',
-                borderRadius: '24px',
-                boxShadow: '0 25px 60px rgba(0,0,0,0.5), 0 0 40px rgba(139,92,246,0.08)',
-                padding: '40px 36px',
+                width: '100%', maxWidth: '420px',
+                background: 'rgba(22,27,34,0.85)', backdropFilter: 'blur(20px)',
+                border: '1px solid rgba(255,255,255,0.06)',
+                borderRadius: '20px', padding: '40px 32px',
+                boxShadow: '0 25px 80px rgba(0,0,0,0.5)',
             }}>
                 {/* Header */}
                 <div style={{ textAlign: 'center', marginBottom: '32px' }}>
                     <div style={{
-                        width: '64px', height: '64px', borderRadius: '20px', margin: '0 auto 16px',
-                        background: isLocked ? 'linear-gradient(135deg, #ef4444, #dc2626)' : 'linear-gradient(135deg, #7c3aed, #3b82f6)',
+                        width: '60px', height: '60px', borderRadius: '16px',
+                        background: 'linear-gradient(135deg, #7c3aed, #3b82f6)',
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        boxShadow: isLocked ? '0 8px 24px rgba(239,68,68,0.3)' : '0 8px 24px rgba(124,58,237,0.3)',
-                        transition: 'all 0.3s ease',
+                        margin: '0 auto 16px', boxShadow: '0 8px 25px rgba(124,58,237,0.3)',
                     }}>
-                        {isLocked ? <FiLock size={28} color="#fff" /> : <FiShield size={28} color="#fff" />}
+                        <FiShield size={28} color="#fff" />
                     </div>
-                    <h1 style={{
-                        fontFamily: 'var(--font-display, Inter, sans-serif)', fontWeight: 900, fontSize: '24px',
-                        color: '#fff', margin: '0 0 6px',
-                    }}>Super Admin</h1>
-                    <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: '13px', margin: 0 }}>
-                        Platform-wide management access
+                    <h1 style={{ fontSize: '22px', fontWeight: 800, color: '#fff', margin: 0 }}>
+                        Super Admin
+                    </h1>
+                    <p style={{ fontSize: '13px', color: 'rgba(255,255,255,0.4)', marginTop: '6px' }}>
+                        Firebase Auth + Custom Claims
                     </p>
                 </div>
 
-                {/* Lockout countdown */}
-                {isLocked && (
+                {/* Lockout Warning */}
+                {lockCountdown > 0 && (
                     <div style={{
-                        padding: '20px', borderRadius: '16px', marginBottom: '20px', textAlign: 'center',
                         background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)',
+                        borderRadius: '12px', padding: '14px 16px', marginBottom: '20px',
+                        display: 'flex', alignItems: 'center', gap: '10px',
                     }}>
-                        <FiLock size={24} style={{ color: '#ef4444', marginBottom: '8px' }} />
-                        <div style={{ fontWeight: 800, fontSize: '13px', color: '#ef4444', marginBottom: '10px' }}>
-                            Account Locked
-                        </div>
-                        <div style={{
-                            fontFamily: 'var(--font-mono, monospace)', fontSize: '32px', fontWeight: 900,
-                            color: '#ef4444', letterSpacing: '2px',
-                        }}>
-                            {formatTime(remaining)}
-                        </div>
-                        <div style={{ fontSize: '11px', color: 'rgba(239,68,68,0.6)', marginTop: '6px' }}>
-                            Too many failed attempts. Try again after the countdown.
-                        </div>
-                        {/* Progress bar */}
-                        <div style={{
-                            marginTop: '12px', height: '4px', borderRadius: '2px',
-                            background: 'rgba(239,68,68,0.15)', overflow: 'hidden',
-                        }}>
-                            <div style={{
-                                height: '100%', borderRadius: '2px',
-                                background: 'linear-gradient(90deg, #ef4444, #f59e0b)',
-                                width: `${Math.max(0, 100 - (remaining / (LOCKOUT_DURATIONS[Math.min(lockoutCount - 1, LOCKOUT_DURATIONS.length - 1)] || 30)) * 100)}%`,
-                                transition: 'width 1s linear',
-                            }} />
+                        <FiAlertTriangle size={16} color="#ef4444" />
+                        <div>
+                            <div style={{ fontSize: '12px', fontWeight: 700, color: '#ef4444' }}>
+                                Account Locked
+                            </div>
+                            <div style={{ fontSize: '11px', color: 'rgba(239,68,68,0.7)' }}>
+                                Wait {formatTime(lockCountdown)} before trying again
+                            </div>
                         </div>
                     </div>
                 )}
 
                 {/* Error */}
-                {error && !isLocked && (
+                {error && (
                     <div style={{
-                        padding: '12px 16px', borderRadius: '12px', marginBottom: '20px',
-                        background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)',
-                        color: '#ef4444', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '8px',
+                        background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.15)',
+                        borderRadius: '10px', padding: '12px', marginBottom: '16px',
+                        fontSize: '12px', color: '#ef4444', fontWeight: 600,
                     }}>
-                        <FiAlertCircle size={16} /> {error}
-                    </div>
-                )}
-
-                {/* Attempt indicator */}
-                {attempts > 0 && !isLocked && (
-                    <div style={{
-                        display: 'flex', justifyContent: 'center', gap: '4px', marginBottom: '16px',
-                    }}>
-                        {Array.from({ length: MAX_ATTEMPTS }, (_, i) => (
-                            <div key={i} style={{
-                                width: '8px', height: '8px', borderRadius: '50%',
-                                background: i < attempts ? '#ef4444' : 'rgba(255,255,255,0.1)',
-                                transition: 'all 0.3s ease',
-                                boxShadow: i < attempts ? '0 0 6px rgba(239,68,68,0.4)' : 'none',
-                            }} />
-                        ))}
+                        {error}
                     </div>
                 )}
 
                 {/* Form */}
                 <form onSubmit={handleLogin}>
                     <div style={{ marginBottom: '16px' }}>
-                        <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: 'rgba(255,255,255,0.5)', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        <label style={{ fontSize: '12px', fontWeight: 600, color: 'rgba(255,255,255,0.5)', display: 'block', marginBottom: '6px' }}>
                             Email
                         </label>
-                        <input type="email" value={email} onChange={e => setEmail(e.target.value)}
-                            placeholder="superadmin@example.com" required disabled={isLocked}
-                            style={{
-                                width: '100%', padding: '14px 16px', borderRadius: '12px',
-                                background: isLocked ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.06)',
-                                border: '1px solid rgba(255,255,255,0.1)',
-                                color: '#fff', fontSize: '14px', outline: 'none', transition: 'border 0.2s',
-                                boxSizing: 'border-box', opacity: isLocked ? 0.5 : 1,
-                            }}
-                            onFocus={e => e.target.style.borderColor = 'rgba(139,92,246,0.5)'}
-                            onBlur={e => e.target.style.borderColor = 'rgba(255,255,255,0.1)'}
-                        />
+                        <div style={{ position: 'relative' }}>
+                            <FiMail size={16} style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: 'rgba(255,255,255,0.3)' }} />
+                            <input type="email" value={email} onChange={e => setEmail(e.target.value)}
+                                placeholder="admin@example.com" autoComplete="email"
+                                disabled={lockCountdown > 0}
+                                style={{
+                                    width: '100%', padding: '12px 14px 12px 42px', borderRadius: '12px',
+                                    border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.04)',
+                                    color: '#fff', fontSize: '14px', outline: 'none', boxSizing: 'border-box',
+                                    transition: 'border-color 0.2s',
+                                }}
+                                onFocus={e => e.target.style.borderColor = 'rgba(124,58,237,0.5)'}
+                                onBlur={e => e.target.style.borderColor = 'rgba(255,255,255,0.08)'}
+                            />
+                        </div>
                     </div>
 
                     <div style={{ marginBottom: '24px' }}>
-                        <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: 'rgba(255,255,255,0.5)', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        <label style={{ fontSize: '12px', fontWeight: 600, color: 'rgba(255,255,255,0.5)', display: 'block', marginBottom: '6px' }}>
                             Password
                         </label>
-                        <input type="password" value={password} onChange={e => setPassword(e.target.value)}
-                            placeholder="••••••••" required disabled={isLocked}
-                            style={{
-                                width: '100%', padding: '14px 16px', borderRadius: '12px',
-                                background: isLocked ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.06)',
-                                border: '1px solid rgba(255,255,255,0.1)',
-                                color: '#fff', fontSize: '14px', outline: 'none', transition: 'border 0.2s',
-                                boxSizing: 'border-box', opacity: isLocked ? 0.5 : 1,
-                            }}
-                            onFocus={e => e.target.style.borderColor = 'rgba(139,92,246,0.5)'}
-                            onBlur={e => e.target.style.borderColor = 'rgba(255,255,255,0.1)'}
-                        />
+                        <div style={{ position: 'relative' }}>
+                            <FiLock size={16} style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: 'rgba(255,255,255,0.3)' }} />
+                            <input type={showPw ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)}
+                                placeholder="••••••••" autoComplete="current-password"
+                                disabled={lockCountdown > 0}
+                                style={{
+                                    width: '100%', padding: '12px 42px 12px 42px', borderRadius: '12px',
+                                    border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.04)',
+                                    color: '#fff', fontSize: '14px', outline: 'none', boxSizing: 'border-box',
+                                    transition: 'border-color 0.2s',
+                                }}
+                                onFocus={e => e.target.style.borderColor = 'rgba(124,58,237,0.5)'}
+                                onBlur={e => e.target.style.borderColor = 'rgba(255,255,255,0.08)'}
+                            />
+                            <button type="button" onClick={() => setShowPw(!showPw)}
+                                style={{
+                                    position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)',
+                                    background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.3)',
+                                    padding: '4px',
+                                }}>
+                                {showPw ? <FiEyeOff size={16} /> : <FiEye size={16} />}
+                            </button>
+                        </div>
                     </div>
 
-                    <button type="submit" disabled={loading || isLocked}
+                    <button type="submit" disabled={loading || lockCountdown > 0}
                         style={{
                             width: '100%', padding: '14px', borderRadius: '12px', border: 'none',
-                            background: isLocked ? 'rgba(255,255,255,0.05)' : 'linear-gradient(135deg, #7c3aed, #3b82f6)',
-                            color: '#fff', fontSize: '14px', fontWeight: 800,
-                            cursor: loading || isLocked ? 'not-allowed' : 'pointer',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-                            boxShadow: isLocked ? 'none' : '0 4px 16px rgba(124,58,237,0.3)',
-                            transition: 'all 0.2s ease', opacity: loading || isLocked ? 0.5 : 1,
-                        }}
-                        onMouseEnter={e => { if (!loading && !isLocked) e.target.style.transform = 'translateY(-1px)'; }}
-                        onMouseLeave={e => { e.target.style.transform = 'translateY(0)'; }}>
-                        {isLocked ? <><FiLock size={16} /> Locked</> :
-                            loading ? 'Verifying...' : <><FiLogIn size={16} /> Access Dashboard</>}
+                            background: lockCountdown > 0 ? 'rgba(255,255,255,0.05)' : 'linear-gradient(135deg, #7c3aed, #3b82f6)',
+                            color: '#fff', fontWeight: 700, fontSize: '14px', cursor: lockCountdown > 0 ? 'not-allowed' : 'pointer',
+                            transition: 'all 0.2s',
+                            opacity: loading ? 0.7 : 1,
+                        }}>
+                        {loading ? '🔐 Verifying...' : lockCountdown > 0 ? `Locked (${formatTime(lockCountdown)})` : '🔐 Access Super Admin'}
                     </button>
                 </form>
 
-                <p style={{ textAlign: 'center', marginTop: '24px', fontSize: '11px', color: 'rgba(255,255,255,0.25)' }}>
-                    🔒 Restricted access • {MAX_ATTEMPTS} attempts before lockout
-                </p>
+                <div style={{ textAlign: 'center', marginTop: '20px', fontSize: '11px', color: 'rgba(255,255,255,0.2)' }}>
+                    Protected by Firebase Custom Claims
+                </div>
             </div>
         </div>
     );

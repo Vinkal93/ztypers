@@ -106,19 +106,25 @@ export default function StudentManager() {
 
     const instituteId = userData?.instituteId || '';
 
-    // Combined: migrate legacy students first, then subscribe filtered
+    // Combined: migrate legacy + orphaned students first, then subscribe filtered
     useEffect(() => {
-        if (!instituteId) return;
+        if (!instituteId) { setLoading(false); return; }
         let unsub = () => { };
         let cancelled = false;
 
         (async () => {
-            // Step 1: Migrate students without instituteId
+            // Step 1: Migrate students without instituteId OR with orphaned instituteId
             try {
-                const allSnap = await getDocs(collection(db, 'students'));
+                const [allSnap, instSnap] = await Promise.all([
+                    getDocs(collection(db, 'students')),
+                    getDocs(collection(db, 'institutes')),
+                ]);
+                const validIds = new Set(instSnap.docs.map(d => d.id));
                 const updates = [];
                 allSnap.docs.forEach(d => {
-                    if (!d.data().instituteId) {
+                    const data = d.data();
+                    // Assign to current admin if: no instituteId, or instituteId points to non-existent institute
+                    if (!data.instituteId || !validIds.has(data.instituteId)) {
                         updates.push(updateDoc(doc(db, 'students', d.id), { instituteId }));
                     }
                 });
@@ -133,6 +139,9 @@ export default function StudentManager() {
                 const list = snap.docs.map(d => ({ id: d.id, ...d.data() }))
                     .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
                 setStudents(list);
+                setLoading(false);
+            }, (err) => {
+                console.error('Student listener error:', err);
                 setLoading(false);
             });
         })();

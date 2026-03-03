@@ -29,6 +29,7 @@ export default function UpcomingEvents() {
     const [enrollTarget, setEnrollTarget] = useState(null);
     const [enrollMsg, setEnrollMsg] = useState('');
     const [filterDifficulty, setFilterDifficulty] = useState('All');
+    const [filterStatus, setFilterStatus] = useState('all');
     const [searchQuery, setSearchQuery] = useState('');
     const [countdowns, setCountdowns] = useState({});
 
@@ -94,6 +95,7 @@ export default function UpcomingEvents() {
 
     const filteredEvents = events.filter(ev => {
         if (filterDifficulty !== 'All' && ev.difficulty !== filterDifficulty) return false;
+        if (filterStatus !== 'all' && (ev.status || 'upcoming') !== filterStatus) return false;
         if (searchQuery && !ev.title?.toLowerCase().includes(searchQuery.toLowerCase())) return false;
         return true;
     });
@@ -147,6 +149,28 @@ export default function UpcomingEvents() {
                         </button>
                     ))}
                 </div>
+            </div>
+
+            {/* Status Filter Tabs */}
+            <div style={{ display: 'flex', gap: '6px', marginBottom: '24px', justifyContent: 'center', flexWrap: 'wrap' }}>
+                {[
+                    { value: 'all', label: '🎯 All', color: 'var(--accent-primary)' },
+                    { value: 'live', label: '🔴 Live', color: '#ef4444' },
+                    { value: 'upcoming', label: '📅 Upcoming', color: '#2563eb' },
+                    { value: 'scheduled', label: '⏰ Scheduled', color: '#7c3aed' },
+                    { value: 'ended', label: '✅ Ended', color: '#10b981' },
+                ].map(s => (
+                    <button key={s.value} onClick={() => setFilterStatus(s.value)}
+                        style={{
+                            padding: '8px 16px', borderRadius: 'var(--radius-full)', border: 'none',
+                            cursor: 'pointer', fontWeight: 700, fontSize: '12px',
+                            background: filterStatus === s.value ? s.color : 'var(--bg-glass)',
+                            color: filterStatus === s.value ? '#fff' : 'var(--text-secondary)',
+                            transition: 'all 0.2s',
+                        }}>
+                        {s.label} {s.value !== 'all' ? `(${events.filter(e => (e.status || 'upcoming') === s.value).length})` : `(${events.length})`}
+                    </button>
+                ))}
             </div>
 
             {/* Success Message */}
