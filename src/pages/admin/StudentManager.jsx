@@ -113,18 +113,14 @@ export default function StudentManager() {
         let cancelled = false;
 
         (async () => {
-            // Step 1: Migrate students without instituteId OR with orphaned instituteId
+            // Step 1: Migrate students missing instituteId OR belonging to a different institute
             try {
-                const [allSnap, instSnap] = await Promise.all([
-                    getDocs(collection(db, 'students')),
-                    getDocs(collection(db, 'institutes')),
-                ]);
-                const validIds = new Set(instSnap.docs.map(d => d.id));
+                const allSnap = await getDocs(collection(db, 'students'));
                 const updates = [];
                 allSnap.docs.forEach(d => {
                     const data = d.data();
-                    // Assign to current admin if: no instituteId, or instituteId points to non-existent institute
-                    if (!data.instituteId || !validIds.has(data.instituteId)) {
+                    // Assign to current admin if student has no instituteId or mismatched one
+                    if (!data.instituteId || data.instituteId !== instituteId) {
                         updates.push(updateDoc(doc(db, 'students', d.id), { instituteId }));
                     }
                 });
