@@ -191,6 +191,9 @@ export default function Landing() {
                 <p style={{ marginTop: '4px', fontSize: '11px', fontWeight: 600 }}>
                     🏆 India's Smartest Live Typing Competition & Institute Management Platform
                 </p>
+                <p style={{ marginTop: '8px', fontSize: '10px', color: 'var(--text-muted)', opacity: 0.6, fontFamily: "'JetBrains Mono', monospace", letterSpacing: '0.5px' }}>
+                    v2.1.0 · Build 2026.03.06 · Powered by Firebase
+                </p>
             </footer>
         </div>
     );

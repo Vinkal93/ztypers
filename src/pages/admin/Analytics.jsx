@@ -157,12 +157,17 @@ export default function Analytics() {
         let cancelled = false;
 
         (async () => {
-            // Migrate session_logs without instituteId
+            // Migrate session_logs without instituteId or with orphaned instituteId
             try {
-                const allSessions = await getDocs(collection(db, 'session_logs'));
+                const [allSessions, instSnap] = await Promise.all([
+                    getDocs(collection(db, 'session_logs')),
+                    getDocs(collection(db, 'institutes')),
+                ]);
+                const validIds = new Set(instSnap.docs.map(d => d.id));
                 const updates = [];
                 allSessions.docs.forEach(d => {
-                    if (!d.data().instituteId) {
+                    const data = d.data();
+                    if (!data.instituteId || !validIds.has(data.instituteId)) {
                         updates.push(updateDoc(doc(db, 'session_logs', d.id), { instituteId }));
                     }
                 });

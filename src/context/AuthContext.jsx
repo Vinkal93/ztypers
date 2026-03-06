@@ -39,8 +39,27 @@ export function AuthProvider({ children }) {
                     const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
                     if (userDoc.exists()) {
                         const data = userDoc.data();
-                        setUserData(data);
-                        if (data.instituteId) await fetchInstitute(data.instituteId);
+                        // If old admin account has no instituteId, auto-create one
+                        if (!data.instituteId) {
+                            const instituteId = firebaseUser.uid;
+                            const instData = {
+                                name: data.instituteName || 'My Institute',
+                                ownerUid: firebaseUser.uid,
+                                ownerEmail: firebaseUser.email,
+                                accentColor: '',
+                                logoUrl: '',
+                                createdAt: new Date().toISOString(),
+                            };
+                            await setDoc(doc(db, 'institutes', instituteId), instData, { merge: true });
+                            setInstitute({ id: instituteId, ...instData });
+                            // Update user doc with new instituteId
+                            const updatedData = { ...data, instituteId };
+                            await setDoc(doc(db, 'users', firebaseUser.uid), updatedData, { merge: true });
+                            setUserData(updatedData);
+                        } else {
+                            setUserData(data);
+                            await fetchInstitute(data.instituteId);
+                        }
                     } else {
                         // Auto-create user doc + institute if missing (first admin)
                         const instituteId = firebaseUser.uid; // use uid as default instituteId

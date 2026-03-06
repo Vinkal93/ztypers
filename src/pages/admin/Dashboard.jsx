@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { collection, query, onSnapshot, getDocs } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, getDocs } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { useAuth } from '../../context/AuthContext';
 import { FiPlus, FiUsers, FiAward, FiActivity, FiBarChart2, FiSettings, FiPlay, FiPackage, FiClipboard, FiClock, FiCalendar, FiUser, FiArrowRight } from 'react-icons/fi';
@@ -11,6 +11,7 @@ export default function AdminDashboard() {
     const [totalParticipants, setTotalParticipants] = useState(0);
     const [eventCount, setEventCount] = useState(0);
     const [enrollmentCount, setEnrollmentCount] = useState(0);
+    const [studentCount, setStudentCount] = useState(0);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
@@ -35,9 +36,19 @@ export default function AdminDashboard() {
         const unsub2 = onSnapshot(collection(db, 'events'), snap => setEventCount(snap.size));
         // Count event enrollments
         const unsub3 = onSnapshot(collection(db, 'event_enrollments'), snap => setEnrollmentCount(snap.size));
+        // Count students for this institute
+        const instId = userData?.instituteId;
+        let unsub4 = () => { };
+        if (instId) {
+            const studentQ = query(collection(db, 'students'), where('instituteId', '==', instId));
+            unsub4 = onSnapshot(studentQ, snap => setStudentCount(snap.size));
+        } else {
+            // Fallback: count all students if no instituteId
+            unsub4 = onSnapshot(collection(db, 'students'), snap => setStudentCount(snap.size));
+        }
 
-        return () => { unsub(); unsub2(); unsub3(); };
-    }, []);
+        return () => { unsub(); unsub2(); unsub3(); unsub4(); };
+    }, [userData?.instituteId]);
 
     const activeCount = competitions.filter(c => c.status === 'active').length;
     const endedCount = competitions.filter(c => c.status === 'ended').length;
@@ -75,7 +86,7 @@ export default function AdminDashboard() {
                     { icon: <FiAward size={22} />, value: competitions.length, label: 'Competitions', color: '#00d4ff' },
                     { icon: <FiActivity size={22} />, value: activeCount, label: 'Active Now', color: '#10b981' },
                     { icon: <FiCalendar size={22} />, value: eventCount, label: 'Events', color: '#d97706' },
-                    { icon: <FiUsers size={22} />, value: enrollmentCount, label: 'Event Enrollments', color: '#7c3aed' },
+                    { icon: <FiUsers size={22} />, value: studentCount, label: 'Total Students', color: '#7c3aed' },
                 ].map((s, i) => (
                     <div key={i} className="glass-card" style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
                         <div style={{

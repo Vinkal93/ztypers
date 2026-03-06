@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { doc, setDoc, onSnapshot, collection, getDoc, addDoc, updateDoc, deleteDoc, arrayUnion } from 'firebase/firestore';
+import { doc, setDoc, onSnapshot, collection, getDoc, addDoc, updateDoc, deleteDoc, arrayUnion, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { calculateWPM, calculateAccuracy, calculateFinalScore, formatTime } from '../lib/ranking';
 import { blockCopyPaste } from '../lib/antiCheat';
@@ -141,80 +141,127 @@ export default function Playground() {
         setLoggingIn(true);
         setForceLoginPrompt(false);
         try {
-            const studentDoc = await getDoc(doc(db, 'students', studentId.toUpperCase()));
-            if (!studentDoc.exists()) {
-                setLoginError('Student ID not found. Ask your admin for correct credentials.');
-            } else if (studentDoc.data().password !== password) {
-                setLoginError('Incorrect password.');
+            // Trim and normalize inputs
+            const trimmedId = studentId.trim().toUpperCase();
+            const trimmedPassword = password.trim();
+
+            if (!trimmedId || !trimmedPassword) {
+                setLoginError('Please enter both Student ID and Password.');
+                setLoggingIn(false);
+                return;
+            }
+
+            // Try two approaches to find the student:
+            // 1. Direct doc lookup (new students created with setDoc use studentId as doc ID)
+            // 2. Query by studentId field (old students created with addDoc have random doc IDs)
+            let studentDoc = null;
+            let studentDocId = null;
+
+            // Approach 1: Direct document ID lookup
+            const directDoc = await getDoc(doc(db, 'students', trimmedId));
+            if (directDoc.exists()) {
+                studentDoc = directDoc.data();
+                studentDocId = directDoc.id;
             } else {
-                const studentData = { id: studentDoc.id, ...studentDoc.data() };
-
-                // ── Status check: disabled / suspended ──
-                const status = studentData.status || 'active';
-                if (status === 'disabled' || status === 'suspended') {
-                    setDisabledStudent(studentData);
-                    setLoggingIn(false);
-                    return;
+                // Approach 2: Query by studentId field (backward compatible with addDoc-created students)
+                const q = query(collection(db, 'students'), where('studentId', '==', trimmedId));
+                const snap = await getDocs(q);
+                if (!snap.empty) {
+                    studentDoc = snap.docs[0].data();
+                    studentDocId = snap.docs[0].id;
                 }
+            }
 
-                // ── Auto re-enable check ──
-                if (studentData.disableUntil && new Date(studentData.disableUntil) <= new Date()) {
-                    await updateDoc(doc(db, 'students', studentData.id), { status: 'active', disableNote: '', disabledAt: null, disableUntil: null });
-                }
+            if (!studentDoc) {
+                setLoginError('Student ID not found. Ask your admin for correct credentials.');
+            } else {
+                const storedPassword = (studentDoc.password || '').trim();
 
-                // ── Single-device session check ──
-                const sessionRef = doc(db, 'student_sessions', studentData.id);
-                const existingSession = await getDoc(sessionRef);
-                if (existingSession.exists() && !forceOverride) {
-                    const sesData = existingSession.data();
-                    const sesAge = Date.now() - (sesData.loginAt || 0);
-                    if (sesAge < SESSION_DURATION) {
-                        // Active session on another device
-                        setForceLoginPrompt(true);
+                if (storedPassword !== trimmedPassword) {
+                    setLoginError('Incorrect password.');
+                } else {
+                    const studentData = {
+                        id: studentDocId,
+                        ...studentDoc,
+                        studentId: studentDoc.studentId || studentDocId, // keep original studentId field
+                    };
+
+                    // ── Status check: disabled / suspended ──
+                    const status = studentData.status || 'active';
+                    if (status === 'disabled' || status === 'suspended') {
+                        setDisabledStudent(studentData);
                         setLoggingIn(false);
                         return;
                     }
-                }
 
-                const now = Date.now();
-                const deviceToken = `${now}_${Math.random().toString(36).slice(2, 10)}`;
+                    // ── Auto re-enable check ──
+                    if (studentData.disableUntil && new Date(studentData.disableUntil) <= new Date()) {
+                        try {
+                            await updateDoc(doc(db, 'students', studentData.id), { status: 'active', disableNote: '', disabledAt: null, disableUntil: null });
+                            studentData.status = 'active';
+                        } catch (reEnableErr) {
+                            console.warn('Auto re-enable failed:', reEnableErr);
+                        }
+                    }
 
-                // Register session in Firestore
-                await setDoc(sessionRef, {
-                    studentId: studentData.id,
-                    studentName: studentData.name,
-                    deviceToken,
-                    loginAt: now,
-                    device: getDeviceInfo().device,
-                    browser: getDeviceInfo().browser,
-                    updatedAt: new Date().toISOString(),
-                });
+                    // ── Single-device session check ──
+                    const sessionRef = doc(db, 'student_sessions', studentData.id);
+                    const existingSession = await getDoc(sessionRef);
+                    if (existingSession.exists() && !forceOverride) {
+                        const sesData = existingSession.data();
+                        const sesAge = Date.now() - (sesData.loginAt || 0);
+                        if (sesAge < SESSION_DURATION) {
+                            // Active session on another device
+                            setForceLoginPrompt(true);
+                            setLoggingIn(false);
+                            return;
+                        }
+                    }
 
-                setStudent(studentData);
-                setLoginTime(now);
-                setSessionTimeLeft(SESSION_DURATION);
+                    const now = Date.now();
+                    const deviceToken = `${now}_${Math.random().toString(36).slice(2, 10)}`;
 
-                // Persist session to localStorage with deviceToken
-                localStorage.setItem(SESSION_KEY, JSON.stringify({ student: studentData, loginTime: now, deviceToken }));
-
-                // Log session to Firestore
-                try {
-                    const location = await getLocation();
-                    const devInfo = getDeviceInfo();
-                    await addDoc(collection(db, 'session_logs'), {
-                        studentId: studentData.id,
+                    // Register session in Firestore
+                    await setDoc(sessionRef, {
+                        studentId: studentData.studentId,
                         studentName: studentData.name,
-                        loginAt: new Date().toISOString(),
-                        location,
-                        ...devInfo,
-                        sessionDurationMs: SESSION_DURATION,
+                        instituteId: studentData.instituteId || '',
+                        batch: studentData.batch || '',
+                        deviceToken,
+                        loginAt: now,
+                        device: getDeviceInfo().device,
+                        browser: getDeviceInfo().browser,
+                        updatedAt: new Date().toISOString(),
                     });
-                } catch (logErr) {
-                    console.warn('Session log failed:', logErr);
+
+                    setStudent(studentData);
+                    setLoginTime(now);
+                    setSessionTimeLeft(SESSION_DURATION);
+
+                    // Persist session to localStorage with deviceToken
+                    localStorage.setItem(SESSION_KEY, JSON.stringify({ student: studentData, loginTime: now, deviceToken }));
+
+                    // Log session to Firestore
+                    try {
+                        const location = await getLocation();
+                        const devInfo = getDeviceInfo();
+                        await addDoc(collection(db, 'session_logs'), {
+                            studentId: studentData.studentId,
+                            studentName: studentData.name,
+                            instituteId: studentData.instituteId || '',
+                            loginAt: new Date().toISOString(),
+                            location,
+                            ...devInfo,
+                            sessionDurationMs: SESSION_DURATION,
+                        });
+                    } catch (logErr) {
+                        console.warn('Session log failed:', logErr);
+                    }
                 }
             }
         } catch (err) {
-            setLoginError('Error: ' + (err.message || 'Something went wrong'));
+            console.error('Student login error:', err);
+            setLoginError('Error: ' + (err.message || 'Something went wrong. Please try again.'));
         }
         setLoggingIn(false);
     };
@@ -321,6 +368,7 @@ export default function Playground() {
             setDoc(doc(db, 'playground_participants', student.id), {
                 name: student.name,
                 studentId: student.id,
+                instituteId: student.instituteId || '',
                 wpm: liveWpm,
                 accuracy: liveAcc,
                 score: liveScore,
@@ -350,6 +398,7 @@ export default function Playground() {
         setDoc(doc(db, 'playground_participants', student.id), {
             name: student.name,
             studentId: student.id,
+            instituteId: student.instituteId || '',
             wpm: finalWpm,
             accuracy: finalAcc,
             score: finalScore,
