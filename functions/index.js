@@ -269,3 +269,199 @@ exports.forceLogoutAll = onCall({ region: "asia-south1" }, async (request) => {
 
     return { success: true, usersAffected: listResult.users.length };
 });
+
+// ═══════════════════════════════════════════════════════════
+// 9. Create Admin (Super Admin only)
+// ═══════════════════════════════════════════════════════════
+exports.createAdmin = onCall({ region: "asia-south1" }, async (request) => {
+    if (!request.auth) throw new HttpsError("unauthenticated", "Login required");
+    if (request.auth.token.role !== "superadmin") {
+        throw new HttpsError("permission-denied", "Only Super Admin can create admins");
+    }
+
+    const { email, password, displayName, instituteName } = request.data;
+    if (!email || !password) throw new HttpsError("invalid-argument", "Email and password required");
+    if (password.length < 6) throw new HttpsError("invalid-argument", "Password must be at least 6 characters");
+
+    // Create Firebase Auth user
+    let newUser;
+    try {
+        newUser = await adminAuth.createUser({
+            email,
+            password,
+            displayName: displayName || email.split('@')[0],
+        });
+    } catch (e) {
+        throw new HttpsError("already-exists", `Could not create user: ${e.message}`);
+    }
+
+    // Set admin role
+    await adminAuth.setCustomUserClaims(newUser.uid, { role: "admin" });
+
+    // Create institute
+    const instituteRef = await db.collection("institutes").add({
+        name: instituteName || `${displayName || email}'s Institute`,
+        createdBy: newUser.uid,
+        createdAt: FieldValue.serverTimestamp(),
+        status: "active",
+    });
+
+    // Create Firestore user doc
+    await db.collection("users").doc(newUser.uid).set({
+        name: displayName || email.split('@')[0],
+        email,
+        role: "admin",
+        instituteId: instituteRef.id,
+        instituteName: instituteName || `${displayName || email}'s Institute`,
+        createdAt: FieldValue.serverTimestamp(),
+        status: "active",
+    });
+
+    // Log
+    await db.collection("adminLogs").add({
+        action: "CREATE_ADMIN",
+        createdBy: request.auth.uid,
+        targetUid: newUser.uid,
+        targetEmail: email,
+        instituteName: instituteName || '',
+        timestamp: FieldValue.serverTimestamp(),
+    });
+
+    return {
+        success: true,
+        uid: newUser.uid,
+        instituteId: instituteRef.id,
+        message: `Admin ${email} created successfully`,
+    };
+});
+
+// ═══════════════════════════════════════════════════════════
+// 10. Delete / Terminate Admin (Super Admin only)
+// ═══════════════════════════════════════════════════════════
+exports.deleteAdmin = onCall({ region: "asia-south1" }, async (request) => {
+    if (!request.auth) throw new HttpsError("unauthenticated", "Login required");
+    if (request.auth.token.role !== "superadmin") {
+        throw new HttpsError("permission-denied", "Only Super Admin");
+    }
+
+    const { targetUid, action } = request.data; // action: 'suspend' | 'terminate' | 'delete'
+    if (!targetUid) throw new HttpsError("invalid-argument", "targetUid required");
+
+    // Get target user info
+    let targetUser;
+    try {
+        targetUser = await adminAuth.getUser(targetUid);
+    } catch (e) {
+        throw new HttpsError("not-found", `User not found: ${e.message}`);
+    }
+
+    // Prevent deleting superadmin
+    if (targetUser.customClaims?.role === "superadmin") {
+        throw new HttpsError("permission-denied", "Cannot modify a Super Admin account");
+    }
+
+    const userDocRef = db.collection("users").doc(targetUid);
+
+    if (action === 'suspend') {
+        await adminAuth.updateUser(targetUid, { disabled: true });
+        await adminAuth.setCustomUserClaims(targetUid, { role: "user" });
+        if ((await userDocRef.get()).exists) {
+            await userDocRef.update({ role: "user", status: "suspended", suspendedAt: FieldValue.serverTimestamp() });
+        }
+    } else if (action === 'terminate') {
+        await adminAuth.updateUser(targetUid, { disabled: true });
+        await adminAuth.setCustomUserClaims(targetUid, { role: "user" });
+        if ((await userDocRef.get()).exists) {
+            await userDocRef.update({ role: "user", status: "terminated", terminatedAt: FieldValue.serverTimestamp() });
+        }
+    } else {
+        // Full delete — disable account
+        await adminAuth.updateUser(targetUid, { disabled: true });
+        await adminAuth.setCustomUserClaims(targetUid, {});
+        if ((await userDocRef.get()).exists) {
+            await userDocRef.update({ role: "deleted", status: "deleted", deletedAt: FieldValue.serverTimestamp() });
+        }
+    }
+
+    await db.collection("adminLogs").add({
+        action: `ADMIN_${(action || 'delete').toUpperCase()}`,
+        promotedBy: request.auth.uid,
+        targetUid,
+        targetEmail: targetUser.email,
+        timestamp: FieldValue.serverTimestamp(),
+    });
+
+    return { success: true, message: `Admin ${targetUser.email} — ${action || 'deleted'}` };
+});
+
+// ═══════════════════════════════════════════════════════════
+// 11. Erase Institute Data (Super Admin only, DESTRUCTIVE)
+// ═══════════════════════════════════════════════════════════
+exports.eraseInstituteData = onCall({ region: "asia-south1" }, async (request) => {
+    if (!request.auth) throw new HttpsError("unauthenticated", "Login required");
+    if (request.auth.token.role !== "superadmin") {
+        throw new HttpsError("permission-denied", "Only Super Admin can erase data");
+    }
+
+    const { instituteId, confirmName, confirmCode } = request.data;
+    if (!instituteId || !confirmName || !confirmCode) {
+        throw new HttpsError("invalid-argument", "instituteId, confirmName, and confirmCode required");
+    }
+
+    // Verify institute exists
+    const instDoc = await db.collection("institutes").doc(instituteId).get();
+    if (!instDoc.exists) throw new HttpsError("not-found", "Institute not found");
+
+    // Verify confirmation name matches
+    if (instDoc.data().name !== confirmName) {
+        throw new HttpsError("failed-precondition", "Institute name does not match confirmation");
+    }
+
+    // Verify confirmation code
+    if (confirmCode !== "ERASE-CONFIRM") {
+        throw new HttpsError("failed-precondition", "Invalid confirmation code");
+    }
+
+    // Delete students for this institute
+    const studentsSnap = await db.collection("students").where("instituteId", "==", instituteId).get();
+    const batch1 = db.batch();
+    studentsSnap.docs.forEach(d => batch1.delete(d.ref));
+    if (studentsSnap.size > 0) await batch1.commit();
+
+    // Delete batches for this institute
+    const batchesSnap = await db.collection("batches").where("instituteId", "==", instituteId).get();
+    const batch2 = db.batch();
+    batchesSnap.docs.forEach(d => batch2.delete(d.ref));
+    if (batchesSnap.size > 0) await batch2.commit();
+
+    // Delete institute settings sub-collection
+    const settingsSnap = await db.collection("institutes").doc(instituteId).collection("settings").get();
+    const batch3 = db.batch();
+    settingsSnap.docs.forEach(d => batch3.delete(d.ref));
+    if (settingsSnap.size > 0) await batch3.commit();
+
+    // Mark institute as erased (don't delete the doc for audit trail)
+    await db.collection("institutes").doc(instituteId).update({
+        status: "erased",
+        erasedAt: FieldValue.serverTimestamp(),
+        erasedBy: request.auth.uid,
+    });
+
+    // Log
+    await db.collection("adminLogs").add({
+        action: "ERASE_INSTITUTE_DATA",
+        promotedBy: request.auth.uid,
+        instituteId,
+        instituteName: instDoc.data().name,
+        studentsDeleted: studentsSnap.size,
+        batchesDeleted: batchesSnap.size,
+        timestamp: FieldValue.serverTimestamp(),
+    });
+
+    return {
+        success: true,
+        message: `Institute "${instDoc.data().name}" data erased`,
+        studentsDeleted: studentsSnap.size,
+        batchesDeleted: batchesSnap.size,
+    };
+});

@@ -1,4 +1,7 @@
+import { useState, useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
+import { doc, onSnapshot } from 'firebase/firestore';
+import { db } from './lib/firebase';
 import { useAuth } from './context/AuthContext';
 import Navbar from './components/Navbar';
 import ScrollToTop from './components/ScrollToTop';
@@ -34,6 +37,8 @@ import EventManager from './pages/admin/EventManager';
 import EventAnalytics from './pages/admin/EventAnalytics';
 import SuperAdminLogin from './pages/admin/SuperAdminLogin';
 import SuperAdminDashboard from './pages/admin/SuperAdminDashboard';
+import PrizeCalculator from './pages/admin/PrizeCalculator';
+import MaintenancePage from './pages/MaintenancePage';
 
 function AdminRoute({ children }) {
   const { user, isAdmin, loading } = useAuth();
@@ -43,7 +48,23 @@ function AdminRoute({ children }) {
 }
 
 export default function App() {
-  const { user, isAdmin } = useAuth();
+  const { user, isAdmin, isSuperAdmin } = useAuth();
+  const [maintenance, setMaintenance] = useState({ enabled: false, message: '' });
+
+  // Listen for maintenance mode in real-time
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, 'appConfig', 'maintenance'), snap => {
+      if (snap.exists()) {
+        setMaintenance(snap.data());
+      }
+    });
+    return () => unsub();
+  }, []);
+
+  // Show maintenance page for non-superadmin users
+  if (maintenance.enabled && (!user || !isSuperAdmin())) {
+    return <MaintenancePage message={maintenance.message} />;
+  }
 
   return (
     <>
@@ -89,6 +110,8 @@ export default function App() {
         <Route path="/admin/profile" element={<AdminRoute><AdminProfile /></AdminRoute>} />
         <Route path="/admin/events" element={<AdminRoute><EventManager /></AdminRoute>} />
         <Route path="/admin/event-analytics/:eventId" element={<AdminRoute><EventAnalytics /></AdminRoute>} />
+        <Route path="/admin/prize-calculator" element={<AdminRoute><PrizeCalculator /></AdminRoute>} />
+        <Route path="/admin/prize-calculator/:compId" element={<AdminRoute><PrizeCalculator /></AdminRoute>} />
 
         {/* Super Admin (Hidden) */}
         <Route path="/SU" element={<SuperAdminLogin />} />

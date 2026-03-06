@@ -8,6 +8,7 @@ import {
     FiUserPlus, FiUserCheck, FiUserX, FiLock, FiUnlock, FiAlertTriangle,
     FiRefreshCw, FiGlobe, FiSmartphone, FiMonitor, FiCalendar, FiSettings,
     FiZap, FiChevronDown, FiChevronRight, FiCopy, FiCheck, FiBell,
+    FiTrash2, FiSlash, FiPlusCircle,
 } from 'react-icons/fi';
 
 const functions = getFunctions(undefined, 'asia-south1');
@@ -62,6 +63,19 @@ export default function SuperAdminDashboard() {
     const [expandedUser, setExpandedUser] = useState(null);
     const [copiedUid, setCopiedUid] = useState('');
     const [refreshing, setRefreshing] = useState(false);
+
+    // Admin creation state
+    const [newAdminEmail, setNewAdminEmail] = useState('');
+    const [newAdminPassword, setNewAdminPassword] = useState('');
+    const [newAdminName, setNewAdminName] = useState('');
+    const [newAdminInstitute, setNewAdminInstitute] = useState('');
+    const [creatingAdmin, setCreatingAdmin] = useState(false);
+
+    // Data erase state
+    const [eraseInstId, setEraseInstId] = useState('');
+    const [eraseConfirmName, setEraseConfirmName] = useState('');
+    const [eraseStep, setEraseStep] = useState(0); // 0=select, 1=type name, 2=final confirm
+    const [erasing, setErasing] = useState(false);
 
     // ── Verify auth ──
     useEffect(() => {
@@ -225,6 +239,58 @@ export default function SuperAdminDashboard() {
         navigate('/SU', { replace: true });
     };
 
+    // Create Admin
+    const handleCreateAdmin = async () => {
+        if (!newAdminEmail || !newAdminPassword) return;
+        setCreatingAdmin(true);
+        setActionMsg({ text: '', type: '' });
+        try {
+            const fn = httpsCallable(functions, 'createAdmin');
+            const result = await fn({
+                email: newAdminEmail.trim(),
+                password: newAdminPassword,
+                displayName: newAdminName.trim() || undefined,
+                instituteName: newAdminInstitute.trim() || undefined,
+            });
+            setActionMsg({ text: result.data.message, type: 'success' });
+            setNewAdminEmail(''); setNewAdminPassword(''); setNewAdminName(''); setNewAdminInstitute('');
+        } catch (e) {
+            setActionMsg({ text: e.message || 'Failed to create admin', type: 'error' });
+        }
+        setCreatingAdmin(false);
+    };
+
+    // Delete/Suspend/Terminate Admin
+    const handleAdminAction = async (uid, action) => {
+        const labels = { suspend: 'Suspend', terminate: 'Terminate', delete: 'Delete' };
+        if (!confirm(`Are you sure you want to ${labels[action]} this admin?`)) return;
+        try {
+            const fn = httpsCallable(functions, 'deleteAdmin');
+            const result = await fn({ targetUid: uid, action });
+            setActionMsg({ text: result.data.message, type: 'success' });
+        } catch (e) {
+            setActionMsg({ text: e.message || 'Failed', type: 'error' });
+        }
+    };
+
+    // Erase Institute Data
+    const handleEraseInstitute = async () => {
+        setErasing(true);
+        try {
+            const fn = httpsCallable(functions, 'eraseInstituteData');
+            const result = await fn({
+                instituteId: eraseInstId,
+                confirmName: eraseConfirmName,
+                confirmCode: 'ERASE-CONFIRM',
+            });
+            setActionMsg({ text: result.data.message, type: 'success' });
+            setEraseStep(0); setEraseInstId(''); setEraseConfirmName('');
+        } catch (e) {
+            setActionMsg({ text: e.message || 'Erase failed', type: 'error' });
+        }
+        setErasing(false);
+    };
+
     // ── Computed ──
     const totalAdmins = allUsers.filter(u => u.role === 'admin' || u.role === 'superadmin').length;
     const totalSuperAdmins = allUsers.filter(u => u.role === 'superadmin').length;
@@ -261,7 +327,8 @@ export default function SuperAdminDashboard() {
     const TABS = [
         { id: 'overview', label: '📊 Overview', icon: FiActivity },
         { id: 'users', label: '👥 Users', icon: FiUsers },
-        { id: 'promote', label: '🛡 Promote', icon: FiUserPlus },
+        { id: 'admins', label: '👔 Admins', icon: FiUserPlus },
+        { id: 'promote', label: '🛡 Promote', icon: FiUserCheck },
         { id: 'institutes', label: '🏫 Institutes', icon: FiGlobe },
         { id: 'security', label: '🔒 Security', icon: FiLock },
         { id: 'control', label: '⚙ Control', icon: FiSettings },
@@ -822,6 +889,238 @@ export default function SuperAdminDashboard() {
                             }}>
                                 firebase functions:shell → initSuperAdmin(&#123;data: &#123;targetEmail: "vinkal93041@gmail.com"&#125;&#125;)
                             </code>
+                        </div>
+                    </div>
+                )}
+
+                {/* ════════ ADMIN MANAGER ════════ */}
+                {tab === 'admins' && (
+                    <div style={{ display: 'grid', gap: '20px', maxWidth: '700px' }}>
+                        {/* Create Admin */}
+                        <div style={{
+                            background: t.card, border: `1px solid ${t.cardBorder}`,
+                            borderRadius: '16px', padding: '24px',
+                        }}>
+                            <h3 style={{ fontWeight: 800, fontSize: '16px', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <FiPlusCircle size={18} /> Create New Admin
+                            </h3>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+                                <div>
+                                    <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: t.textMuted, marginBottom: '4px' }}>Email *</label>
+                                    <input type="email" value={newAdminEmail} onChange={e => setNewAdminEmail(e.target.value)}
+                                        placeholder="admin@example.com" style={{
+                                            width: '100%', padding: '10px 14px', borderRadius: '10px', border: `1px solid ${t.cardBorder}`,
+                                            background: t.inputBg, color: t.text, fontSize: '13px', outline: 'none',
+                                        }} />
+                                </div>
+                                <div>
+                                    <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: t.textMuted, marginBottom: '4px' }}>Password *</label>
+                                    <input type="password" value={newAdminPassword} onChange={e => setNewAdminPassword(e.target.value)}
+                                        placeholder="Min 6 characters" style={{
+                                            width: '100%', padding: '10px 14px', borderRadius: '10px', border: `1px solid ${t.cardBorder}`,
+                                            background: t.inputBg, color: t.text, fontSize: '13px', outline: 'none',
+                                        }} />
+                                </div>
+                                <div>
+                                    <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: t.textMuted, marginBottom: '4px' }}>Display Name</label>
+                                    <input type="text" value={newAdminName} onChange={e => setNewAdminName(e.target.value)}
+                                        placeholder="Admin Name" style={{
+                                            width: '100%', padding: '10px 14px', borderRadius: '10px', border: `1px solid ${t.cardBorder}`,
+                                            background: t.inputBg, color: t.text, fontSize: '13px', outline: 'none',
+                                        }} />
+                                </div>
+                                <div>
+                                    <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: t.textMuted, marginBottom: '4px' }}>Institute Name</label>
+                                    <input type="text" value={newAdminInstitute} onChange={e => setNewAdminInstitute(e.target.value)}
+                                        placeholder="Institute Name" style={{
+                                            width: '100%', padding: '10px 14px', borderRadius: '10px', border: `1px solid ${t.cardBorder}`,
+                                            background: t.inputBg, color: t.text, fontSize: '13px', outline: 'none',
+                                        }} />
+                                </div>
+                            </div>
+                            <button onClick={handleCreateAdmin} disabled={creatingAdmin || !newAdminEmail || !newAdminPassword}
+                                style={{
+                                    padding: '10px 24px', borderRadius: '10px', border: 'none',
+                                    background: 'linear-gradient(135deg, #7c3aed, #3b82f6)',
+                                    color: '#fff', cursor: 'pointer', fontWeight: 700, fontSize: '13px',
+                                    opacity: creatingAdmin || !newAdminEmail || !newAdminPassword ? 0.5 : 1,
+                                }}>
+                                {creatingAdmin ? '⏳ Creating...' : '➕ Create Admin'}
+                            </button>
+                        </div>
+
+                        {/* Admin List */}
+                        <div style={{
+                            background: t.card, border: `1px solid ${t.cardBorder}`,
+                            borderRadius: '16px', padding: '24px',
+                        }}>
+                            <h3 style={{ fontWeight: 800, fontSize: '16px', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <FiUsers size={18} /> All Admins ({allUsers.filter(u => u.role === 'admin').length})
+                            </h3>
+                            <div style={{ display: 'grid', gap: '8px' }}>
+                                {allUsers.filter(u => u.role === 'admin').map(u => (
+                                    <div key={u.id} style={{
+                                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                        padding: '14px 16px', borderRadius: '12px',
+                                        background: t.inputBg, border: `1px solid ${t.rowBorder}`,
+                                    }}>
+                                        <div style={{ flex: 1, minWidth: 0 }}>
+                                            <div style={{ fontWeight: 700, fontSize: '14px' }}>{u.name || u.email}</div>
+                                            <div style={{ fontSize: '11px', color: t.textMuted }}>
+                                                {u.email} • {u.instituteName || 'No Institute'}
+                                                {u.status && u.status !== 'active' && (
+                                                    <span style={{
+                                                        marginLeft: '8px', padding: '2px 8px', borderRadius: '100px',
+                                                        background: u.status === 'suspended' ? 'rgba(245,158,11,0.1)' : 'rgba(239,68,68,0.1)',
+                                                        color: u.status === 'suspended' ? '#f59e0b' : '#ef4444',
+                                                        fontSize: '10px', fontWeight: 700,
+                                                    }}>
+                                                        {u.status.toUpperCase()}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </div>
+                                        <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                                            <button onClick={() => handleAdminAction(u.id, 'suspend')}
+                                                title="Suspend" style={{
+                                                    padding: '6px 10px', borderRadius: '8px', border: 'none',
+                                                    background: 'rgba(245,158,11,0.1)', color: '#f59e0b',
+                                                    cursor: 'pointer', fontSize: '11px', fontWeight: 700,
+                                                    display: 'flex', alignItems: 'center', gap: '4px',
+                                                }}>
+                                                <FiSlash size={12} /> Suspend
+                                            </button>
+                                            <button onClick={() => handleAdminAction(u.id, 'terminate')}
+                                                title="Terminate" style={{
+                                                    padding: '6px 10px', borderRadius: '8px', border: 'none',
+                                                    background: 'rgba(239,68,68,0.1)', color: '#ef4444',
+                                                    cursor: 'pointer', fontSize: '11px', fontWeight: 700,
+                                                    display: 'flex', alignItems: 'center', gap: '4px',
+                                                }}>
+                                                <FiUserX size={12} /> Terminate
+                                            </button>
+                                            <button onClick={() => handleAdminAction(u.id, 'delete')}
+                                                title="Delete" style={{
+                                                    padding: '6px 10px', borderRadius: '8px', border: 'none',
+                                                    background: 'rgba(239,68,68,0.15)', color: '#dc2626',
+                                                    cursor: 'pointer', fontSize: '11px', fontWeight: 700,
+                                                    display: 'flex', alignItems: 'center', gap: '4px',
+                                                }}>
+                                                <FiTrash2 size={12} />
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))}
+                                {allUsers.filter(u => u.role === 'admin').length === 0 && (
+                                    <div style={{ textAlign: 'center', padding: '24px', color: t.textMuted, fontSize: '13px' }}>
+                                        No admins found. Create one above.
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Data Erase */}
+                        <div style={{
+                            background: 'rgba(239,68,68,0.03)', border: '1px solid rgba(239,68,68,0.12)',
+                            borderRadius: '16px', padding: '24px',
+                        }}>
+                            <h3 style={{ fontWeight: 800, fontSize: '16px', marginBottom: '8px', color: '#ef4444', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <FiAlertTriangle size={18} /> Erase Institute Data
+                            </h3>
+                            <p style={{ fontSize: '12px', color: t.textMuted, marginBottom: '16px' }}>
+                                ⚠️ This will permanently delete all students, batches, and settings for an institute. This cannot be undone.
+                            </p>
+
+                            {eraseStep === 0 && (
+                                <div>
+                                    <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: t.textMuted, marginBottom: '4px' }}>Select Institute</label>
+                                    <select value={eraseInstId} onChange={e => setEraseInstId(e.target.value)} style={{
+                                        width: '100%', padding: '10px 14px', borderRadius: '10px', border: `1px solid ${t.cardBorder}`,
+                                        background: t.inputBg, color: t.text, fontSize: '13px', marginBottom: '12px',
+                                    }}>
+                                        <option value="">Select...</option>
+                                        {institutes.filter(i => i.status !== 'erased').map(i => (
+                                            <option key={i.id} value={i.id}>{i.name} ({i.id.substring(0, 8)}...)</option>
+                                        ))}
+                                    </select>
+                                    <button onClick={() => eraseInstId && setEraseStep(1)} disabled={!eraseInstId}
+                                        style={{
+                                            padding: '10px 20px', borderRadius: '10px', border: 'none',
+                                            background: 'rgba(239,68,68,0.1)', color: '#ef4444',
+                                            cursor: 'pointer', fontWeight: 700, fontSize: '12px',
+                                            opacity: !eraseInstId ? 0.5 : 1,
+                                        }}>
+                                        Next → Confirm
+                                    </button>
+                                </div>
+                            )}
+
+                            {eraseStep === 1 && (
+                                <div>
+                                    <p style={{ fontSize: '12px', color: '#ef4444', fontWeight: 700, marginBottom: '8px' }}>
+                                        Type the institute name exactly to confirm:
+                                        <strong style={{ display: 'block', marginTop: '4px', fontSize: '14px' }}>
+                                            "{institutes.find(i => i.id === eraseInstId)?.name}"
+                                        </strong>
+                                    </p>
+                                    <input type="text" value={eraseConfirmName} onChange={e => setEraseConfirmName(e.target.value)}
+                                        placeholder="Type institute name here..." style={{
+                                            width: '100%', padding: '10px 14px', borderRadius: '10px',
+                                            border: '1px solid rgba(239,68,68,0.2)',
+                                            background: t.inputBg, color: t.text, fontSize: '13px', marginBottom: '12px',
+                                        }} />
+                                    <div style={{ display: 'flex', gap: '10px' }}>
+                                        <button onClick={() => {
+                                            if (eraseConfirmName === institutes.find(i => i.id === eraseInstId)?.name) {
+                                                setEraseStep(2);
+                                            } else {
+                                                setActionMsg({ text: 'Institute name does not match!', type: 'error' });
+                                            }
+                                        }} style={{
+                                            padding: '10px 20px', borderRadius: '10px', border: 'none',
+                                            background: 'rgba(239,68,68,0.15)', color: '#ef4444',
+                                            cursor: 'pointer', fontWeight: 700, fontSize: '12px',
+                                        }}>
+                                            Confirm Name
+                                        </button>
+                                        <button onClick={() => { setEraseStep(0); setEraseConfirmName(''); }} style={{
+                                            padding: '10px 20px', borderRadius: '10px', border: `1px solid ${t.cardBorder}`,
+                                            background: 'transparent', color: t.textMuted,
+                                            cursor: 'pointer', fontWeight: 700, fontSize: '12px',
+                                        }}>
+                                            Cancel
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+
+                            {eraseStep === 2 && (
+                                <div style={{ textAlign: 'center' }}>
+                                    <div style={{ fontSize: '48px', marginBottom: '12px' }}>⚠️</div>
+                                    <p style={{ fontSize: '14px', fontWeight: 800, color: '#ef4444', marginBottom: '4px' }}>
+                                        FINAL CONFIRMATION
+                                    </p>
+                                    <p style={{ fontSize: '12px', color: t.textMuted, marginBottom: '16px' }}>
+                                        All students, batches, and settings for <strong>"{eraseConfirmName}"</strong> will be permanently deleted.
+                                    </p>
+                                    <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
+                                        <button onClick={handleEraseInstitute} disabled={erasing} style={{
+                                            padding: '12px 28px', borderRadius: '10px', border: 'none',
+                                            background: '#ef4444', color: '#fff',
+                                            cursor: 'pointer', fontWeight: 700, fontSize: '13px',
+                                        }}>
+                                            {erasing ? '⏳ Erasing...' : '🗑 YES, ERASE ALL DATA'}
+                                        </button>
+                                        <button onClick={() => { setEraseStep(0); setEraseConfirmName(''); }} style={{
+                                            padding: '12px 28px', borderRadius: '10px', border: `1px solid ${t.cardBorder}`,
+                                            background: 'transparent', color: t.textMuted,
+                                            cursor: 'pointer', fontWeight: 700, fontSize: '13px',
+                                        }}>
+                                            Cancel
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     </div>
                 )}

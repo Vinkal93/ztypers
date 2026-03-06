@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { collection, query, where, onSnapshot, getDocs } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { useAuth } from '../../context/AuthContext';
-import { FiPlus, FiUsers, FiAward, FiActivity, FiBarChart2, FiSettings, FiPlay, FiPackage, FiClipboard, FiClock, FiCalendar, FiUser, FiArrowRight } from 'react-icons/fi';
+import { FiPlus, FiUsers, FiAward, FiActivity, FiBarChart2, FiSettings, FiPlay, FiPackage, FiClipboard, FiClock, FiCalendar, FiUser, FiArrowRight, FiDollarSign } from 'react-icons/fi';
 
 export default function AdminDashboard() {
     const { userData, institute } = useAuth();
@@ -62,6 +62,7 @@ export default function AdminDashboard() {
         { to: '/admin/analytics', icon: <FiBarChart2 size={20} />, label: 'Analytics', desc: 'View performance data', color: '#e11d48' },
         { to: '/admin/batch-history', icon: <FiClock size={20} />, label: 'Batch History', desc: 'Past batch records', color: '#64748b' },
         { to: '/admin/session-history', icon: <FiActivity size={20} />, label: 'Sessions', desc: 'Student session logs', color: '#c026d3' },
+        { to: '/admin/prize-calculator', icon: <FiDollarSign size={20} />, label: 'Prize Calculator', desc: 'Smart prize generation', color: '#f59e0b' },
         { to: '/admin/profile', icon: <FiUser size={20} />, label: 'Profile', desc: 'Account & branding', color: '#0d9488' },
     ];
 
@@ -161,7 +162,13 @@ export default function AdminDashboard() {
                                             </div>
                                         </td>
                                         <td style={{ fontFamily: 'var(--font-mono)' }}>{c.duration || 60}s</td>
-                                        <td style={{ color: 'var(--rank-gold)', fontWeight: 600 }}>{c.prize ? `₹${c.prize}` : '-'}</td>
+                                        <td style={{ color: 'var(--rank-gold)', fontWeight: 600 }}>
+                                            {c.prizeData?.locked ? (
+                                                <span title={`Pool: ₹${c.prizeData.totalPool} | ${c.prizeData.winnerCount} winner(s)`}>
+                                                    🔒 ₹{c.prizeData.generatedPrize?.toLocaleString('en-IN')}
+                                                </span>
+                                            ) : c.prize ? `₹${c.prize}` : '-'}
+                                        </td>
                                         <td>
                                             <span className={`badge badge-${c.status || 'upcoming'}`}>{c.status || 'upcoming'}</span>
                                         </td>
