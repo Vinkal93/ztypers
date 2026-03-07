@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import { collection, query, where, onSnapshot, addDoc } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, addDoc, updateDoc, doc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
-import { FiCalendar, FiClock, FiDollarSign, FiUsers, FiZap, FiAward, FiCheckCircle, FiSearch, FiFilter } from 'react-icons/fi';
+import { FiCalendar, FiClock, FiDollarSign, FiUsers, FiZap, FiAward, FiCheckCircle, FiSearch, FiFilter, FiCreditCard } from 'react-icons/fi';
+import usePayment from '../hooks/usePayment';
 
 function getCountdown(dateStr, timeStr) {
     if (!dateStr) return null;
@@ -32,6 +33,11 @@ export default function UpcomingEvents() {
     const [filterStatus, setFilterStatus] = useState('all');
     const [searchQuery, setSearchQuery] = useState('');
     const [countdowns, setCountdowns] = useState({});
+    const [paymentSuccess, setPaymentSuccess] = useState(null); // { eventTitle, amount, paymentId }
+
+    // Detect institute ID from events (first event's instituteId)
+    const firstInstituteId = events[0]?.instituteId || null;
+    const { isPaymentConfigured, startRazorpayPayment, processing: paymentProcessing } = usePayment(firstInstituteId);
 
     // Listen to published events
     useEffect(() => {
@@ -69,24 +75,71 @@ export default function UpcomingEvents() {
 
     const handleEnroll = async (eventId) => {
         if (!enrollForm.name.trim()) return;
+        const event = events.find(e => e.id === eventId);
+        const isPaid = event?.entryFee > 0;
+
         setEnrolling(eventId);
         setEnrollMsg('');
+
         try {
+            let paymentDocId = null;
+            let paymentId = null;
+
+            // If paid event AND payment is configured, process payment first
+            if (isPaid && isPaymentConfigured) {
+                try {
+                    const result = await startRazorpayPayment({
+                        amount: event.entryFee,
+                        description: `Entry Fee - ${event.title}`,
+                        prefillName: enrollForm.name.trim(),
+                        prefillEmail: enrollForm.email.trim(),
+                        prefillPhone: enrollForm.phone.trim(),
+                        metadata: { eventId, eventTitle: event.title, type: 'event_enrollment' },
+                    });
+                    paymentDocId = result.paymentDocId;
+                    paymentId = result.paymentId;
+                } catch (payErr) {
+                    setEnrolling(null);
+                    if (payErr.message === 'Payment cancelled by user') {
+                        setEnrollMsg('⚠️ Payment cancelled. Enrollment not completed.');
+                    } else {
+                        setEnrollMsg('❌ Payment failed: ' + payErr.message);
+                    }
+                    setTimeout(() => setEnrollMsg(''), 5000);
+                    return;
+                }
+            }
+
+            // Save enrollment
             await addDoc(collection(db, 'event_enrollments'), {
                 eventId,
                 name: enrollForm.name.trim(),
                 email: enrollForm.email.trim(),
                 phone: enrollForm.phone.trim(),
                 enrolledAt: new Date().toISOString(),
+                paid: isPaid,
+                paymentId: paymentId || null,
+                paymentDocId: paymentDocId || null,
+                amount: isPaid ? event.entryFee : 0,
             });
+
             const newEnrolled = new Set(enrolledIds);
             newEnrolled.add(eventId);
             setEnrolledIds(newEnrolled);
             localStorage.setItem('ztypers_event_enrollments', JSON.stringify([...newEnrolled]));
-            setEnrollMsg('🎉 Enrolled successfully!');
+
+            if (isPaid && paymentId) {
+                setPaymentSuccess({
+                    eventTitle: event.title,
+                    amount: event.entryFee,
+                    paymentId,
+                });
+            }
+
+            setEnrollMsg('🎉 Enrolled successfully!' + (isPaid ? ' Payment confirmed.' : ''));
             setEnrollForm({ name: '', email: '', phone: '' });
             setEnrollTarget(null);
-            setTimeout(() => setEnrollMsg(''), 3000);
+            setTimeout(() => setEnrollMsg(''), 4000);
         } catch (err) {
             setEnrollMsg('Error: ' + err.message);
         }
@@ -183,6 +236,45 @@ export default function UpcomingEvents() {
                     fontWeight: 600, fontSize: '14px',
                 }}>
                     {enrollMsg}
+                </div>
+            )}
+
+            {/* Payment Success Modal */}
+            {paymentSuccess && (
+                <div style={{
+                    position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000,
+                }} onClick={() => setPaymentSuccess(null)}>
+                    <div onClick={e => e.stopPropagation()} style={{
+                        background: 'var(--bg-card)', borderRadius: 'var(--radius-xl)', padding: '40px',
+                        maxWidth: '420px', width: '90%', textAlign: 'center', border: '1px solid var(--bg-glass-border)',
+                        boxShadow: '0 25px 50px rgba(0,0,0,0.3)',
+                    }}>
+                        <div style={{ fontSize: '64px', marginBottom: '16px' }}>✅</div>
+                        <h2 style={{ fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: '24px', marginBottom: '8px' }}>
+                            Payment Successful!
+                        </h2>
+                        <p style={{ color: 'var(--text-secondary)', fontSize: '14px', marginBottom: '20px' }}>
+                            You've been enrolled in <strong>{paymentSuccess.eventTitle}</strong>
+                        </p>
+                        <div style={{
+                            background: 'var(--bg-input)', borderRadius: 'var(--radius-md)', padding: '16px', marginBottom: '20px',
+                        }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                                <span style={{ color: 'var(--text-muted)', fontSize: '13px' }}>Amount Paid</span>
+                                <span style={{ fontWeight: 800, fontSize: '16px', color: 'var(--accent-success)' }}>₹{paymentSuccess.amount}</span>
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                <span style={{ color: 'var(--text-muted)', fontSize: '13px' }}>Payment ID</span>
+                                <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--text-secondary)' }}>
+                                    {paymentSuccess.paymentId}
+                                </span>
+                            </div>
+                        </div>
+                        <button onClick={() => setPaymentSuccess(null)} className="btn btn-primary" style={{ width: '100%', padding: '14px' }}>
+                            Done
+                        </button>
+                    </div>
                 </div>
             )}
 
@@ -348,8 +440,13 @@ export default function UpcomingEvents() {
                                             </div>
                                         ) : (
                                             <button onClick={() => setEnrollTarget(ev.id)} className="btn btn-primary"
+                                                disabled={paymentProcessing}
                                                 style={{ width: '100%', padding: '13px', background: 'var(--accent-gradient)', fontWeight: 700, fontSize: '14px' }}>
-                                                <FiUsers style={{ marginRight: '6px' }} />Enroll Now
+                                                {ev.entryFee > 0 ? (
+                                                    <><FiCreditCard style={{ marginRight: '6px' }} />Pay ₹{ev.entryFee} & Enroll</>
+                                                ) : (
+                                                    <><FiUsers style={{ marginRight: '6px' }} />Enroll Now</>
+                                                )}
                                             </button>
                                         )}
                                     </div>

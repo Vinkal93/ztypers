@@ -48,6 +48,10 @@ export default function AdminProfile() {
     const [paymentSaving, setPaymentSaving] = useState(false);
     const [paymentMsg, setPaymentMsg] = useState({ type: '', text: '' });
     const [paymentLoaded, setPaymentLoaded] = useState(false);
+    const [activeGateway, setActiveGateway] = useState('razorpay');
+    const [stripePublicKey, setStripePublicKey] = useState('');
+    const [stripeSecretKey, setStripeSecretKey] = useState('');
+    const [showStripeSecret, setShowStripeSecret] = useState(false);
 
     // Load initial data
     useEffect(() => {
@@ -74,6 +78,9 @@ export default function AdminProfile() {
                         setRazorpayKeyId(data.razorpayKeyId || '');
                         setRazorpayKeySecret(data.razorpayKeySecret || '');
                         setPaymentMode(data.paymentMode || 'test');
+                        setActiveGateway(data.activeGateway || 'razorpay');
+                        setStripePublicKey(data.stripePublicKey || '');
+                        setStripeSecretKey(data.stripeSecretKey || '');
                     }
                     setPaymentLoaded(true);
                 } catch (err) {
@@ -137,16 +144,23 @@ export default function AdminProfile() {
 
     // Save payment settings
     const handleSavePayment = async () => {
-        if (!razorpayKeyId.trim()) {
+        if ((activeGateway === 'razorpay' || activeGateway === 'both') && !razorpayKeyId.trim()) {
             setPaymentMsg({ type: 'error', text: 'Razorpay Key ID is required.' });
+            return;
+        }
+        if ((activeGateway === 'stripe' || activeGateway === 'both') && !stripePublicKey.trim()) {
+            setPaymentMsg({ type: 'error', text: 'Stripe Publishable Key is required.' });
             return;
         }
         setPaymentSaving(true);
         setPaymentMsg({ type: '', text: '' });
         try {
             await setDoc(doc(db, 'institutes', userData.instituteId, 'settings', 'payment'), {
+                activeGateway,
                 razorpayKeyId: razorpayKeyId.trim(),
                 razorpayKeySecret: razorpayKeySecret.trim(),
+                stripePublicKey: stripePublicKey.trim(),
+                stripeSecretKey: stripeSecretKey.trim(),
                 paymentMode,
                 updatedAt: new Date().toISOString(),
                 updatedBy: user.uid,
@@ -354,6 +368,27 @@ export default function AdminProfile() {
                         </div>
                     </div>
 
+                    {/* Gateway Selector */}
+                    <div className="form-group">
+                        <label className="input-label">Select Payment Gateway</label>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                            {[{ id: 'razorpay', label: '💳 Razorpay', desc: 'India' },
+                            { id: 'stripe', label: '🌍 Stripe', desc: 'Global' },
+                            { id: 'both', label: '🔄 Both', desc: 'Multi' }].map(g => (
+                                <button key={g.id} onClick={() => setActiveGateway(g.id)}
+                                    style={{
+                                        flex: 1, padding: '14px', borderRadius: 'var(--radius-md)',
+                                        border: activeGateway === g.id ? '2px solid var(--accent-primary)' : '1px solid var(--bg-glass-border)',
+                                        background: activeGateway === g.id ? 'var(--accent-gradient-light)' : 'var(--bg-input)',
+                                        cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s ease',
+                                    }}>
+                                    <div style={{ fontWeight: 700, fontSize: '13px', color: activeGateway === g.id ? 'var(--accent-primary)' : 'var(--text-primary)' }}>{g.label}</div>
+                                    <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px' }}>{g.desc}</div>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
                     {/* Mode selector */}
                     <div className="form-group">
                         <label className="input-label">Environment Mode</label>
@@ -372,35 +407,63 @@ export default function AdminProfile() {
                         </div>
                     </div>
 
-                    {/* API Key ID */}
-                    <div className="form-group">
-                        <label className="input-label"><FiKey size={13} style={{ marginRight: '6px' }} />Razorpay Key ID *</label>
-                        <input type="text" className="input" value={razorpayKeyId} onChange={e => setRazorpayKeyId(e.target.value)}
-                            placeholder={paymentMode === 'test' ? 'rzp_test_xxxxxxxxxxxx' : 'rzp_live_xxxxxxxxxxxx'}
-                            style={{ fontFamily: 'var(--font-mono)', fontSize: '13px' }} />
-                    </div>
-
-                    {/* API Key Secret */}
-                    <div className="form-group">
-                        <label className="input-label"><FiKey size={13} style={{ marginRight: '6px' }} />Razorpay Key Secret</label>
-                        <div style={{ position: 'relative' }}>
-                            <input type={showSecret ? 'text' : 'password'} className="input" value={razorpayKeySecret}
-                                onChange={e => setRazorpayKeySecret(e.target.value)}
-                                placeholder="Enter your secret key"
-                                style={{ fontFamily: 'var(--font-mono)', fontSize: '13px', paddingRight: '50px' }} />
-                            <button onClick={() => setShowSecret(!showSecret)}
-                                style={{
-                                    position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)',
-                                    background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)',
-                                    padding: '8px',
-                                }}>
-                                {showSecret ? <FiEyeOff size={16} /> : <FiEye size={16} />}
-                            </button>
+                    {/* Razorpay Section */}
+                    {(activeGateway === 'razorpay' || activeGateway === 'both') && (
+                        <div style={{ padding: '18px', background: 'rgba(255,255,255,0.03)', borderRadius: 'var(--radius-md)', marginBottom: '16px', border: '1px solid var(--bg-glass-border)' }}>
+                            <div style={{ fontWeight: 800, fontSize: '12px', color: 'var(--text-muted)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Razorpay Config</div>
+                            <div className="form-group">
+                                <label className="input-label"><FiKey size={13} style={{ marginRight: '6px' }} />Key ID *</label>
+                                <input type="text" className="input" value={razorpayKeyId} onChange={e => setRazorpayKeyId(e.target.value)}
+                                    placeholder={paymentMode === 'test' ? 'rzp_test_xxxxxxxxxxxx' : 'rzp_live_xxxxxxxxxxxx'}
+                                    style={{ fontFamily: 'var(--font-mono)', fontSize: '13px' }} />
+                            </div>
+                            <div className="form-group" style={{ marginBottom: 0 }}>
+                                <label className="input-label"><FiKey size={13} style={{ marginRight: '6px' }} />Key Secret</label>
+                                <div style={{ position: 'relative' }}>
+                                    <input type={showSecret ? 'text' : 'password'} className="input" value={razorpayKeySecret}
+                                        onChange={e => setRazorpayKeySecret(e.target.value)}
+                                        placeholder="Enter your secret key"
+                                        style={{ fontFamily: 'var(--font-mono)', fontSize: '13px', paddingRight: '50px' }} />
+                                    <button onClick={() => setShowSecret(!showSecret)}
+                                        style={{
+                                            position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)',
+                                            background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '8px',
+                                        }}>
+                                        {showSecret ? <FiEyeOff size={16} /> : <FiEye size={16} />}
+                                    </button>
+                                </div>
+                            </div>
                         </div>
-                        <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
-                            The secret is used for server-side payment verification. Keep it safe.
-                        </span>
-                    </div>
+                    )}
+
+                    {/* Stripe Section */}
+                    {(activeGateway === 'stripe' || activeGateway === 'both') && (
+                        <div style={{ padding: '18px', background: 'rgba(255,255,255,0.03)', borderRadius: 'var(--radius-md)', marginBottom: '16px', border: '1px solid var(--bg-glass-border)' }}>
+                            <div style={{ fontWeight: 800, fontSize: '12px', color: 'var(--text-muted)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Stripe Config</div>
+                            <div className="form-group">
+                                <label className="input-label"><FiKey size={13} style={{ marginRight: '6px' }} />Publishable Key *</label>
+                                <input type="text" className="input" value={stripePublicKey} onChange={e => setStripePublicKey(e.target.value)}
+                                    placeholder={paymentMode === 'test' ? 'pk_test_xxxxxxxxxxxx' : 'pk_live_xxxxxxxxxxxx'}
+                                    style={{ fontFamily: 'var(--font-mono)', fontSize: '13px' }} />
+                            </div>
+                            <div className="form-group" style={{ marginBottom: 0 }}>
+                                <label className="input-label"><FiKey size={13} style={{ marginRight: '6px' }} />Secret Key</label>
+                                <div style={{ position: 'relative' }}>
+                                    <input type={showStripeSecret ? 'text' : 'password'} className="input" value={stripeSecretKey}
+                                        onChange={e => setStripeSecretKey(e.target.value)}
+                                        placeholder="Enter your Stripe secret key"
+                                        style={{ fontFamily: 'var(--font-mono)', fontSize: '13px', paddingRight: '50px' }} />
+                                    <button onClick={() => setShowStripeSecret(!showStripeSecret)}
+                                        style={{
+                                            position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)',
+                                            background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '8px',
+                                        }}>
+                                        {showStripeSecret ? <FiEyeOff size={16} /> : <FiEye size={16} />}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                     {paymentMsg.text && (
                         <div style={{
@@ -414,21 +477,30 @@ export default function AdminProfile() {
                         </div>
                     )}
 
-                    <button onClick={handleSavePayment} className="btn btn-primary" disabled={paymentSaving || !razorpayKeyId.trim()}
+                    <button onClick={handleSavePayment} className="btn btn-primary" disabled={paymentSaving}
                         style={{ width: '100%', padding: '14px', marginTop: '8px' }}>
                         {paymentSaving ? 'Saving...' : <><FiSave /> Save Payment Settings</>}
                     </button>
 
                     {/* How to get keys section */}
                     <div style={{ marginTop: '24px', padding: '18px', background: 'var(--bg-input)', borderRadius: 'var(--radius-md)' }}>
-                        <div style={{ fontWeight: 700, fontSize: '13px', marginBottom: '8px' }}>📖 How to get your Razorpay keys?</div>
-                        <ol style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.8, paddingLeft: '18px', margin: 0 }}>
-                            <li>Go to <a href="https://dashboard.razorpay.com" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-primary)', fontWeight: 600 }}>dashboard.razorpay.com</a></li>
-                            <li>Navigate to <strong>Settings → API Keys</strong></li>
-                            <li>Generate a new key pair (Test or Live)</li>
-                            <li>Copy the <strong>Key ID</strong> and <strong>Key Secret</strong></li>
-                            <li>Paste them here and click <strong>Save</strong></li>
-                        </ol>
+                        <div style={{ fontWeight: 700, fontSize: '13px', marginBottom: '12px' }}>📖 How to get your API keys?</div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                            <div>
+                                <div style={{ fontWeight: 700, fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '6px' }}>Razorpay:</div>
+                                <ol style={{ fontSize: '11px', color: 'var(--text-muted)', lineHeight: 1.6, paddingLeft: '16px', margin: 0 }}>
+                                    <li>Dashboard &rarr; Settings</li>
+                                    <li>API Keys &rarr; Generate</li>
+                                </ol>
+                            </div>
+                            <div>
+                                <div style={{ fontWeight: 700, fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '6px' }}>Stripe:</div>
+                                <ol style={{ fontSize: '11px', color: 'var(--text-muted)', lineHeight: 1.6, paddingLeft: '16px', margin: 0 }}>
+                                    <li>Dashboard &rarr; Developers</li>
+                                    <li>API Keys &rarr; Standard Keys</li>
+                                </ol>
+                            </div>
+                        </div>
                     </div>
                 </div>
             )}
