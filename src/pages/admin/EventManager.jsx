@@ -214,6 +214,8 @@ export default function EventManager() {
     const [deleteConfirm, setDeleteConfirm] = useState(null);
     const [saving, setSaving] = useState(false);
     const [filterStatus, setFilterStatus] = useState('all');
+    const [editingPrice, setEditingPrice] = useState(null); // event id being price-edited
+    const [tempPrice, setTempPrice] = useState('');
 
     const instituteId = userData?.instituteId || '';
 
@@ -288,6 +290,18 @@ export default function EventManager() {
     const formatDate = (d) => {
         if (!d) return '-';
         return new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+    };
+
+    const handleSaveInlinePrice = async (evId) => {
+        try {
+            await setDoc(doc(db, 'events', evId), { entryFee: Number(tempPrice) || 0, updatedAt: new Date().toISOString() }, { merge: true });
+        } catch (err) { console.error('Error updating price:', err); }
+        setEditingPrice(null);
+        setTempPrice('');
+    };
+
+    const toggleEnabled = async (ev) => {
+        await setDoc(doc(db, 'events', ev.id), { enabled: !ev.enabled, updatedAt: new Date().toISOString() }, { merge: true });
     };
 
     const filteredEvents = filterStatus === 'all' ? events : events.filter(e => e.status === filterStatus);
@@ -414,17 +428,46 @@ export default function EventManager() {
                                 <div style={{
                                     padding: '10px 22px', borderTop: '1px solid var(--bg-glass-border)',
                                     display: 'flex', gap: '20px', flexWrap: 'wrap', fontSize: '12px', color: 'var(--text-muted)',
-                                    background: 'var(--bg-glass)',
+                                    background: 'var(--bg-glass)', alignItems: 'center',
                                 }}>
                                     <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><FiCalendar size={12} />{formatDate(ev.eventDate)}</span>
                                     {ev.eventTime && <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><FiClock size={12} />{ev.eventTime}</span>}
                                     <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><FiClock size={12} />{ev.duration >= 60 ? `${Math.round(ev.duration / 60)} min` : `${ev.duration}s`}</span>
                                     {ev.prize > 0 && <span style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>🏆 ₹{ev.prize}</span>}
-                                    {ev.entryFee > 0 && <span>Entry: ₹{ev.entryFee}</span>}
+                                    {/* Inline price edit */}
+                                    {editingPrice === ev.id ? (
+                                        <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                            <span>Entry: ₹</span>
+                                            <input type="number" value={tempPrice} onChange={e => setTempPrice(e.target.value)}
+                                                onKeyDown={e => { if (e.key === 'Enter') handleSaveInlinePrice(ev.id); if (e.key === 'Escape') setEditingPrice(null); }}
+                                                autoFocus
+                                                style={{ width: '60px', padding: '2px 6px', borderRadius: '4px', border: '1px solid var(--accent-primary)', background: 'var(--bg-input)', color: 'var(--text-primary)', fontSize: '12px', fontWeight: 700 }} />
+                                            <button onClick={() => handleSaveInlinePrice(ev.id)}
+                                                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent-success)', padding: '2px' }}><FiSave size={12} /></button>
+                                            <button onClick={() => setEditingPrice(null)}
+                                                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '2px' }}><FiX size={12} /></button>
+                                        </span>
+                                    ) : (
+                                        <span onClick={() => { setEditingPrice(ev.id); setTempPrice(ev.entryFee || 0); }}
+                                            style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+                                            title="Click to edit price">
+                                            Entry: ₹{ev.entryFee || 0} <FiEdit2 size={10} style={{ opacity: 0.5 }} />
+                                        </span>
+                                    )}
                                     <span style={{ fontSize: '10px', padding: '1px 6px', borderRadius: '4px', background: 'var(--bg-glass-border)', fontWeight: 600 }}>
                                         {ev.difficulty || 'Medium'}
                                     </span>
                                     {ev.published && <span style={{ fontSize: '10px', padding: '1px 6px', borderRadius: '4px', background: 'rgba(16,185,129,0.08)', color: '#10b981', fontWeight: 600 }}>Published</span>}
+                                    {/* Enable / Disable toggle */}
+                                    <button onClick={() => toggleEnabled(ev)}
+                                        style={{
+                                            marginLeft: 'auto', padding: '3px 10px', borderRadius: 'var(--radius-full)', border: 'none', cursor: 'pointer',
+                                            fontSize: '10px', fontWeight: 700,
+                                            background: ev.enabled !== false ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)',
+                                            color: ev.enabled !== false ? '#10b981' : '#ef4444',
+                                        }}>
+                                        {ev.enabled !== false ? '✅ Enabled' : '❌ Disabled'}
+                                    </button>
                                 </div>
                             </div>
                         );

@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { auth, db } from '../../lib/firebase';
+import { db } from '../../lib/firebase';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { collection, getDocs, onSnapshot, query, where, orderBy, limit as firestoreLimit } from 'firebase/firestore';
+import { useSuperAdmin } from '../../context/SuperAdminContext';
 import {
     FiShield, FiUsers, FiActivity, FiLogOut, FiSun, FiMoon, FiSearch,
     FiUserPlus, FiUserCheck, FiUserX, FiLock, FiUnlock, FiAlertTriangle,
@@ -35,13 +36,14 @@ const THEMES = {
 
 export default function SuperAdminDashboard() {
     const navigate = useNavigate();
+    const { isSuperAdmin, superAdminUser, loading: authLoading, logoutSuperAdmin } = useSuperAdmin();
     const [dark, setDark] = useState(true);
     const t = THEMES[dark ? 'dark' : 'light'];
 
     // Auth state
-    const [verified, setVerified] = useState(false);
-    const [loading, setLoading] = useState(true);
-    const [currentUser, setCurrentUser] = useState(null);
+    const verified = isSuperAdmin;
+    const loading = authLoading;
+    const currentUser = superAdminUser;
 
     // Tab
     const [tab, setTab] = useState('overview');
@@ -77,25 +79,12 @@ export default function SuperAdminDashboard() {
     const [eraseStep, setEraseStep] = useState(0); // 0=select, 1=type name, 2=final confirm
     const [erasing, setErasing] = useState(false);
 
-    // ── Verify auth ──
+    // ── Verify auth (Supabase) ──
     useEffect(() => {
-        const unsub = auth.onAuthStateChanged(async (u) => {
-            if (!u) { navigate('/SU', { replace: true }); return; }
-            try {
-                const token = await u.getIdTokenResult(true);
-                if (token.claims.role !== 'superadmin') {
-                    navigate('/SU', { replace: true });
-                    return;
-                }
-                setCurrentUser(u);
-                setVerified(true);
-            } catch {
-                navigate('/SU', { replace: true });
-            }
-            setLoading(false);
-        });
-        return () => unsub();
-    }, [navigate]);
+        if (!authLoading && !isSuperAdmin) {
+            navigate('/SU', { replace: true });
+        }
+    }, [authLoading, isSuperAdmin, navigate]);
 
     // ── Fetch all data ──
     useEffect(() => {
@@ -235,7 +224,7 @@ export default function SuperAdminDashboard() {
     };
 
     const handleLogout = async () => {
-        await auth.signOut();
+        await logoutSuperAdmin();
         navigate('/SU', { replace: true });
     };
 
@@ -357,7 +346,7 @@ export default function SuperAdminDashboard() {
                     <div>
                         <div style={{ fontWeight: 800, fontSize: '16px' }}>Super Admin Panel</div>
                         <div style={{ fontSize: '11px', color: t.textSubtle }}>
-                            {currentUser?.email} — Custom Claims Auth
+                            {currentUser?.email} — Supabase Auth
                         </div>
                     </div>
                 </div>

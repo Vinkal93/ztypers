@@ -192,7 +192,7 @@ export default function Landing() {
                     🏆 India's Smartest Live Typing Competition & Institute Management Platform
                 </p>
                 <p style={{ marginTop: '8px', fontSize: '10px', color: 'var(--text-muted)', opacity: 0.6, fontFamily: "'JetBrains Mono', monospace", letterSpacing: '0.5px' }}>
-                    v2.1.0 · Build 2026.03.06 · Powered by Firebase
+                    v2.2.0 · Build 2026.03.07 · Built by Vinkal Prajapati
                 </p>
             </footer>
         </div>

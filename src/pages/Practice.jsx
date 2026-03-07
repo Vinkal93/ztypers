@@ -136,6 +136,10 @@ export default function Practice() {
                     <p className="page-subtitle">Free typing tool — improve your speed and accuracy</p>
                 </div>
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <a href="https://typingmaster2.vercel.app/" target="_blank" rel="noopener noreferrer"
+                        className="btn btn-secondary" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        📖 Learn Typing
+                    </a>
                     <button onClick={loadNewParagraph} className="btn btn-secondary">
                         <FiRefreshCw size={15} /> New Text
                     </button>

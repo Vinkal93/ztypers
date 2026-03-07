@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { signInWithEmailAndPassword } from 'firebase/auth';
-import { auth } from '../../lib/firebase';
+import { useSuperAdmin } from '../../context/SuperAdminContext';
 import { FiShield, FiMail, FiLock, FiAlertTriangle, FiEye, FiEyeOff } from 'react-icons/fi';
 
 const LOCKOUT_KEY = 'su_lockout';
@@ -14,7 +13,7 @@ function getLockout() {
     } catch { return { attempts: 0, lockedUntil: 0 }; }
 }
 
-function setLockout(attempts, cooldownMs = 0) {
+function setLockoutData(attempts, cooldownMs = 0) {
     localStorage.setItem(LOCKOUT_KEY, JSON.stringify({
         attempts,
         lockedUntil: cooldownMs ? Date.now() + cooldownMs : 0,
@@ -26,6 +25,7 @@ const COOLDOWNS = [30000, 60000, 300000, 900000, 1800000];
 
 export default function SuperAdminLogin() {
     const navigate = useNavigate();
+    const { isSuperAdmin, loginSuperAdmin, loading: authLoading } = useSuperAdmin();
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [showPw, setShowPw] = useState(false);
@@ -48,24 +48,17 @@ export default function SuperAdminLogin() {
         return () => clearInterval(id);
     }, []);
 
-    // Check if already logged in as superadmin
+    // Redirect if already logged in
     useEffect(() => {
-        const checkAuth = async () => {
-            if (auth.currentUser) {
-                const token = await auth.currentUser.getIdTokenResult();
-                if (token.claims.role === 'superadmin') {
-                    navigate('/SU/dashboard', { replace: true });
-                }
-            }
-        };
-        checkAuth();
-    }, [navigate]);
+        if (!authLoading && isSuperAdmin) {
+            navigate('/SU/dashboard', { replace: true });
+        }
+    }, [isSuperAdmin, authLoading, navigate]);
 
     const handleLogin = async (e) => {
         e.preventDefault();
         setError('');
 
-        // Check lockout
         const { attempts, lockedUntil } = getLockout();
         if (lockedUntil > Date.now()) {
             setError('Account locked. Please wait.');
@@ -79,45 +72,24 @@ export default function SuperAdminLogin() {
 
         setLoading(true);
         try {
-            // Sign in with Firebase Auth
-            const result = await signInWithEmailAndPassword(auth, email.trim(), password);
-
-            // Force token refresh to get latest claims
-            const tokenResult = await result.user.getIdTokenResult(true);
-
-            // Check for superadmin role in custom claims
-            if (tokenResult.claims.role !== 'superadmin') {
-                setError('⛔ Access Denied — You are not a Super Admin');
-                // Sign out so they don't stay logged in as wrong role
-                await auth.signOut();
-                const newAttempts = attempts + 1;
-                if (newAttempts >= MAX_ATTEMPTS) {
-                    const cooldown = COOLDOWNS[Math.min(Math.floor(newAttempts / MAX_ATTEMPTS) - 1, COOLDOWNS.length - 1)];
-                    setLockout(newAttempts, cooldown);
-                } else {
-                    setLockout(newAttempts);
-                }
-                setLoading(false);
-                return;
-            }
-
+            await loginSuperAdmin(email.trim(), password);
             // SUCCESS — clear lockout, navigate
-            setLockout(0);
+            setLockoutData(0);
             navigate('/SU/dashboard', { replace: true });
         } catch (err) {
             const newAttempts = attempts + 1;
-            if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
+            if (err.message?.includes('Invalid login')) {
                 setError('Invalid credentials');
-            } else if (err.code === 'auth/too-many-requests') {
-                setError('Too many attempts. Try again later.');
+            } else if (err.message?.includes('Email not confirmed')) {
+                setError('Email not confirmed. Check your inbox.');
             } else {
                 setError(err.message || 'Login failed');
             }
             if (newAttempts >= MAX_ATTEMPTS) {
                 const cooldown = COOLDOWNS[Math.min(Math.floor(newAttempts / MAX_ATTEMPTS) - 1, COOLDOWNS.length - 1)];
-                setLockout(newAttempts, cooldown);
+                setLockoutData(newAttempts, cooldown);
             } else {
-                setLockout(newAttempts);
+                setLockoutData(newAttempts);
             }
         }
         setLoading(false);
@@ -157,7 +129,7 @@ export default function SuperAdminLogin() {
                         Super Admin
                     </h1>
                     <p style={{ fontSize: '13px', color: 'rgba(255,255,255,0.4)', marginTop: '6px' }}>
-                        Firebase Auth + Custom Claims
+                        Supabase Secure Auth
                     </p>
                 </div>
 
@@ -256,7 +228,7 @@ export default function SuperAdminLogin() {
                 </form>
 
                 <div style={{ textAlign: 'center', marginTop: '20px', fontSize: '11px', color: 'rgba(255,255,255,0.2)' }}>
-                    Protected by Firebase Custom Claims
+                    Protected by Supabase Auth
                 </div>
             </div>
         </div>

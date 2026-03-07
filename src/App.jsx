@@ -3,6 +3,7 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from './lib/firebase';
 import { useAuth } from './context/AuthContext';
+import { useSuperAdmin } from './context/SuperAdminContext';
 import Navbar from './components/Navbar';
 import ScrollToTop from './components/ScrollToTop';
 import Landing from './pages/Landing';
@@ -20,6 +21,7 @@ import Winners from './pages/Winners';
 import About from './pages/About';
 import Enroll from './pages/Enroll';
 import UpcomingEvents from './pages/UpcomingEvents';
+import PaymentPage from './pages/PaymentPage';
 import AdminDashboard from './pages/admin/Dashboard';
 import AdminCreate from './pages/admin/CreateCompetition';
 import AdminManage from './pages/admin/ManageCompetition';
@@ -47,8 +49,16 @@ function AdminRoute({ children }) {
   return children;
 }
 
+function SuperAdminRoute({ children }) {
+  const { isSuperAdmin, loading } = useSuperAdmin();
+  if (loading) return <div className="page-container" style={{ textAlign: 'center', paddingTop: '100px' }}><div className="timer">Loading...</div></div>;
+  if (!isSuperAdmin) return <Navigate to="/SU" />;
+  return children;
+}
+
 export default function App() {
-  const { user, isAdmin, isSuperAdmin } = useAuth();
+  const { user, isAdmin } = useAuth();
+  const { isSuperAdmin } = useSuperAdmin();
   const [maintenance, setMaintenance] = useState({ enabled: false, message: '' });
 
   // Listen for maintenance mode in real-time
@@ -62,7 +72,7 @@ export default function App() {
   }, []);
 
   // Show maintenance page for non-superadmin users
-  if (maintenance.enabled && (!user || !isSuperAdmin())) {
+  if (maintenance.enabled && (!user || !isAdmin()) && !isSuperAdmin) {
     return <MaintenancePage message={maintenance.message} />;
   }
 
@@ -85,6 +95,7 @@ export default function App() {
         <Route path="/about" element={<About />} />
         <Route path="/enroll" element={<Enroll />} />
         <Route path="/events" element={<UpcomingEvents />} />
+        <Route path="/payment/:eventId" element={<PaymentPage />} />
 
         {/* Admin auth */}
         <Route path="/login" element={user && isAdmin() ? <Navigate to="/admin" /> : <Login />} />
@@ -113,9 +124,9 @@ export default function App() {
         <Route path="/admin/prize-calculator" element={<AdminRoute><PrizeCalculator /></AdminRoute>} />
         <Route path="/admin/prize-calculator/:compId" element={<AdminRoute><PrizeCalculator /></AdminRoute>} />
 
-        {/* Super Admin (Hidden) */}
+        {/* Super Admin (Supabase Auth) */}
         <Route path="/SU" element={<SuperAdminLogin />} />
-        <Route path="/SU/dashboard" element={<SuperAdminDashboard />} />
+        <Route path="/SU/dashboard" element={<SuperAdminRoute><SuperAdminDashboard /></SuperAdminRoute>} />
       </Routes>
     </>
   );

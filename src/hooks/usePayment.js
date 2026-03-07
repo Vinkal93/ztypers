@@ -1,150 +1,246 @@
-/**
- * usePayment Hook — Razorpay + Stripe payment integration
- * Loads admin's payment config from Firestore and handles checkout
- */
 import { useState, useEffect, useCallback } from 'react';
 import { doc, getDoc, addDoc, collection, updateDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 
-// Load Razorpay SDK dynamically
-function loadRazorpayScript() {
-    return new Promise((resolve) => {
-        if (document.getElementById('razorpay-script')) { resolve(true); return; }
-        const s = document.createElement('script');
-        s.id = 'razorpay-script';
-        s.src = 'https://checkout.razorpay.com/v1/checkout.js';
-        s.onload = () => resolve(true);
-        s.onerror = () => resolve(false);
-        document.body.appendChild(s);
-    });
-}
-
 export default function usePayment(instituteId) {
     const [paymentConfig, setPaymentConfig] = useState(null);
-    const [loading, setLoading] = useState(true);
     const [processing, setProcessing] = useState(false);
+    const [error, setError] = useState(null);
 
-    // Load payment config from institute settings
+    // Fetch payment config from Firestore
     useEffect(() => {
-        if (!instituteId) { setLoading(false); return; }
+        if (!instituteId) return;
         (async () => {
             try {
-                const payDoc = await getDoc(doc(db, 'institutes', instituteId, 'settings', 'payment'));
-                if (payDoc.exists()) {
-                    setPaymentConfig(payDoc.data());
+                const snap = await getDoc(doc(db, `institutes/${instituteId}/settings/payment`));
+                if (snap.exists()) {
+                    setPaymentConfig(snap.data());
                 }
-            } catch (e) {
-                console.error('Error loading payment config:', e);
+            } catch (err) {
+                console.error('Error fetching payment config:', err);
             }
-            setLoading(false);
         })();
     }, [instituteId]);
 
-    const isPaymentConfigured = !!(paymentConfig?.razorpayKeyId);
+    const isPaymentConfigured = !!paymentConfig && !!paymentConfig.activeGateway;
+    const activeGateway = paymentConfig?.activeGateway || 'razorpay';
 
-    // ── Razorpay Checkout ──────────────────────────────────
+    // ── Load Razorpay SDK ──
+    const loadRazorpaySDK = () => new Promise((resolve) => {
+        if (window.Razorpay) return resolve(true);
+        const script = document.createElement('script');
+        script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+        script.onload = () => resolve(true);
+        script.onerror = () => resolve(false);
+        document.body.appendChild(script);
+    });
+
+    // ── Load Cashfree SDK ──
+    const loadCashfreeSDK = () => new Promise((resolve) => {
+        if (window.Cashfree) return resolve(true);
+        const script = document.createElement('script');
+        script.src = 'https://sdk.cashfree.com/js/v3/cashfree.js';
+        script.onload = () => resolve(true);
+        script.onerror = () => resolve(false);
+        document.body.appendChild(script);
+    });
+
+    // ── Razorpay Payment ──
     const startRazorpayPayment = useCallback(async ({
-        amount, // in INR (₹), will be multiplied by 100 for paisa
-        currency = 'INR',
-        name = 'InSuite Typers',
-        description = 'Event Entry Fee',
-        prefillName = '',
-        prefillEmail = '',
-        prefillPhone = '',
-        metadata = {}, // eventId, enrollmentId etc.
+        amount, description, prefillName, prefillEmail, prefillPhone, metadata = {},
     }) => {
-        if (!paymentConfig?.razorpayKeyId) {
-            throw new Error('Payment gateway not configured by admin');
-        }
-
-        const loaded = await loadRazorpayScript();
-        if (!loaded) throw new Error('Failed to load Razorpay SDK');
-
         setProcessing(true);
+        setError(null);
 
-        // Create a payment record in Firestore BEFORE opening checkout
-        const paymentRef = await addDoc(collection(db, 'payments'), {
-            instituteId,
-            amount,
-            currency,
-            gateway: 'razorpay',
-            status: 'initiated',
-            metadata,
-            createdAt: new Date().toISOString(),
-        });
+        try {
+            const loaded = await loadRazorpaySDK();
+            if (!loaded) throw new Error('Failed to load Razorpay SDK');
 
-        return new Promise((resolve, reject) => {
-            const options = {
-                key: paymentConfig.razorpayKeyId,
-                amount: Math.round(amount * 100), // Convert to paisa
-                currency,
-                name,
-                description,
-                order_id: undefined, // Client-side — no server order (test mode compatible)
-                prefill: {
-                    name: prefillName,
-                    email: prefillEmail,
-                    contact: prefillPhone,
-                },
-                notes: {
-                    paymentDocId: paymentRef.id,
-                    ...metadata,
-                },
-                theme: {
-                    color: '#7c3aed',
-                },
-                handler: async (response) => {
-                    // Payment success
-                    try {
-                        await updateDoc(doc(db, 'payments', paymentRef.id), {
-                            status: 'completed',
-                            razorpayPaymentId: response.razorpay_payment_id,
-                            razorpayOrderId: response.razorpay_order_id || null,
-                            razorpaySignature: response.razorpay_signature || null,
+            const mode = paymentConfig.mode || 'test';
+            const apiKey = mode === 'live' ? paymentConfig.razorpayLiveKey : paymentConfig.razorpayTestKey;
+            if (!apiKey) throw new Error('Razorpay API key not configured');
+
+            // Record payment attempt
+            const paymentRef = await addDoc(collection(db, `institutes/${instituteId}/payments`), {
+                amount, description, gateway: 'razorpay', mode, status: 'initiated',
+                metadata, createdAt: new Date().toISOString(),
+            });
+
+            return new Promise((resolve, reject) => {
+                const options = {
+                    key: apiKey,
+                    amount: amount * 100, // Razorpay uses paise
+                    currency: 'INR',
+                    name: paymentConfig.businessName || 'Z Typers',
+                    description,
+                    order_id: undefined,
+                    handler: async (response) => {
+                        await updateDoc(doc(db, `institutes/${instituteId}/payments`, paymentRef.id), {
+                            status: 'success', paymentId: response.razorpay_payment_id,
                             completedAt: new Date().toISOString(),
                         });
                         setProcessing(false);
-                        resolve({
-                            success: true,
-                            paymentId: response.razorpay_payment_id,
-                            paymentDocId: paymentRef.id,
-                        });
-                    } catch (e) {
-                        setProcessing(false);
-                        reject(e);
-                    }
-                },
-                modal: {
-                    ondismiss: async () => {
-                        await updateDoc(doc(db, 'payments', paymentRef.id), {
-                            status: 'cancelled',
-                            cancelledAt: new Date().toISOString(),
-                        });
-                        setProcessing(false);
-                        reject(new Error('Payment cancelled by user'));
+                        resolve({ paymentDocId: paymentRef.id, paymentId: response.razorpay_payment_id });
                     },
-                },
-            };
+                    prefill: {
+                        name: prefillName || '', email: prefillEmail || '', contact: prefillPhone || '',
+                    },
+                    theme: { color: '#7c3aed' },
+                    modal: {
+                        ondismiss: () => {
+                            updateDoc(doc(db, `institutes/${instituteId}/payments`, paymentRef.id), {
+                                status: 'cancelled',
+                            });
+                            setProcessing(false);
+                            reject(new Error('Payment cancelled by user'));
+                        },
+                    },
+                };
 
-            const rzp = new window.Razorpay(options);
-            rzp.on('payment.failed', async (response) => {
-                await updateDoc(doc(db, 'payments', paymentRef.id), {
-                    status: 'failed',
-                    error: response.error?.description || 'Payment failed',
-                    failedAt: new Date().toISOString(),
+                const rzp = new window.Razorpay(options);
+                rzp.on('payment.failed', async (resp) => {
+                    await updateDoc(doc(db, `institutes/${instituteId}/payments`, paymentRef.id), {
+                        status: 'failed', error: resp.error?.description || 'Failed',
+                    });
+                    setProcessing(false);
+                    reject(new Error(resp.error?.description || 'Payment failed'));
+                });
+                rzp.open();
+            });
+        } catch (err) {
+            setProcessing(false);
+            setError(err.message);
+            throw err;
+        }
+    }, [paymentConfig, instituteId]);
+
+    // ── Stripe Payment (redirect-based) ──
+    const startStripePayment = useCallback(async ({
+        amount, description, prefillName, prefillEmail, metadata = {},
+    }) => {
+        setProcessing(true);
+        setError(null);
+        try {
+            const mode = paymentConfig.mode || 'test';
+            const apiKey = mode === 'live' ? paymentConfig.stripeLiveKey : paymentConfig.stripeTestKey;
+            if (!apiKey) throw new Error('Stripe API key not configured');
+
+            // Record payment attempt
+            const paymentRef = await addDoc(collection(db, `institutes/${instituteId}/payments`), {
+                amount, description, gateway: 'stripe', mode, status: 'initiated',
+                metadata, createdAt: new Date().toISOString(),
+            });
+
+            // Note: Full Stripe integration requires a backend (Cloud Function) for creating Checkout Sessions.
+            // For now, we store the intent and admin can handle via Stripe dashboard.
+            await updateDoc(doc(db, `institutes/${instituteId}/payments`, paymentRef.id), {
+                status: 'pending_stripe', note: 'Stripe requires backend integration for Checkout Session',
+            });
+
+            setProcessing(false);
+            return { paymentDocId: paymentRef.id, paymentId: null, note: 'Stripe payment recorded' };
+        } catch (err) {
+            setProcessing(false);
+            setError(err.message);
+            throw err;
+        }
+    }, [paymentConfig, instituteId]);
+
+    // ── Cashfree Payment ──
+    const startCashfreePayment = useCallback(async ({
+        amount, description, prefillName, prefillEmail, prefillPhone, metadata = {},
+    }) => {
+        setProcessing(true);
+        setError(null);
+        try {
+            const mode = paymentConfig.mode || 'test';
+            const appId = mode === 'live' ? paymentConfig.cashfreeLiveAppId : paymentConfig.cashfreeTestAppId;
+            if (!appId) throw new Error('Cashfree App ID not configured');
+
+            // Record payment attempt
+            const paymentRef = await addDoc(collection(db, `institutes/${instituteId}/payments`), {
+                amount, description, gateway: 'cashfree', mode, status: 'initiated',
+                metadata, createdAt: new Date().toISOString(),
+            });
+
+            const loaded = await loadCashfreeSDK();
+            if (!loaded) {
+                // Fallback: create order link
+                await updateDoc(doc(db, `institutes/${instituteId}/payments`, paymentRef.id), {
+                    status: 'pending_cashfree', note: 'Cashfree SDK failed to load. Use Cashfree dashboard to create order.',
                 });
                 setProcessing(false);
-                reject(new Error(response.error?.description || 'Payment failed'));
+                return { paymentDocId: paymentRef.id, paymentId: null, note: 'Cashfree payment recorded' };
+            }
+
+            // Cashfree requires backend to create order. Record intent.
+            await updateDoc(doc(db, `institutes/${instituteId}/payments`, paymentRef.id), {
+                status: 'pending_cashfree', note: 'Cashfree requires backend to create order session.',
             });
-            rzp.open();
-        });
+
+            setProcessing(false);
+            return { paymentDocId: paymentRef.id, paymentId: null, note: 'Cashfree payment recorded' };
+        } catch (err) {
+            setProcessing(false);
+            setError(err.message);
+            throw err;
+        }
     }, [paymentConfig, instituteId]);
+
+    // ── PayU Payment (form redirect) ──
+    const startPayUPayment = useCallback(async ({
+        amount, description, prefillName, prefillEmail, prefillPhone, metadata = {},
+    }) => {
+        setProcessing(true);
+        setError(null);
+        try {
+            const mode = paymentConfig.mode || 'test';
+            const merchantKey = mode === 'live' ? paymentConfig.payuLiveMerchantKey : paymentConfig.payuTestMerchantKey;
+            if (!merchantKey) throw new Error('PayU Merchant Key not configured');
+
+            // Record payment attempt
+            const paymentRef = await addDoc(collection(db, `institutes/${instituteId}/payments`), {
+                amount, description, gateway: 'payu', mode, status: 'initiated',
+                metadata, createdAt: new Date().toISOString(),
+            });
+
+            // PayU requires server-side hash generation for security.
+            // Record the intent for now.
+            await updateDoc(doc(db, `institutes/${instituteId}/payments`, paymentRef.id), {
+                status: 'pending_payu', note: 'PayU requires server-side hash. Use PayU dashboard to process.',
+            });
+
+            setProcessing(false);
+            return { paymentDocId: paymentRef.id, paymentId: null, note: 'PayU payment recorded' };
+        } catch (err) {
+            setProcessing(false);
+            setError(err.message);
+            throw err;
+        }
+    }, [paymentConfig, instituteId]);
+
+    // ── Universal Payment Starter ──
+    const startPayment = useCallback(async (paymentDetails) => {
+        const gateway = activeGateway;
+        switch (gateway) {
+            case 'razorpay': return startRazorpayPayment(paymentDetails);
+            case 'stripe': return startStripePayment(paymentDetails);
+            case 'cashfree': return startCashfreePayment(paymentDetails);
+            case 'payu': return startPayUPayment(paymentDetails);
+            default: throw new Error(`Unknown payment gateway: ${gateway}`);
+        }
+    }, [activeGateway, startRazorpayPayment, startStripePayment, startCashfreePayment, startPayUPayment]);
 
     return {
         paymentConfig,
-        loading,
-        processing,
         isPaymentConfigured,
+        activeGateway,
+        processing,
+        error,
+        startPayment,
         startRazorpayPayment,
+        startStripePayment,
+        startCashfreePayment,
+        startPayUPayment,
     };
 }
