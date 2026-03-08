@@ -8,18 +8,32 @@ export function SuperAdminProvider({ children }) {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
+        let subscription;
+
         // Get initial session
-        supabase.auth.getSession().then(({ data: { session } }) => {
-            setSession(session);
+        const init = async () => {
+            try {
+                const { data: { session } } = await supabase.auth.getSession();
+                setSession(session);
+            } catch (err) {
+                console.warn('[Z Typers] Supabase auth not available:', err.message);
+            }
             setLoading(false);
-        });
+        };
+
+        init();
 
         // Listen for auth changes
-        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-            setSession(session);
-        });
+        try {
+            const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+                setSession(session);
+            });
+            subscription = data?.subscription;
+        } catch (err) {
+            console.warn('[Z Typers] Supabase auth listener failed:', err.message);
+        }
 
-        return () => subscription.unsubscribe();
+        return () => subscription?.unsubscribe();
     }, []);
 
     const loginSuperAdmin = async (email, password) => {

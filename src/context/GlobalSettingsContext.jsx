@@ -29,21 +29,28 @@ export function GlobalSettingsProvider({ children }) {
         fetchSettings();
 
         // Subscribe to real-time changes
-        const channel = supabase
-            .channel('global_settings_changes')
-            .on('postgres_changes', {
-                event: '*',
-                schema: 'public',
-                table: 'global_settings',
-            }, (payload) => {
-                if (payload.new) {
-                    setSettings(prev => ({ ...prev, [payload.new.key]: payload.new.value }));
-                }
-            })
-            .subscribe();
+        let channel;
+        try {
+            channel = supabase
+                .channel('global_settings_changes')
+                .on('postgres_changes', {
+                    event: '*',
+                    schema: 'public',
+                    table: 'global_settings',
+                }, (payload) => {
+                    if (payload.new) {
+                        setSettings(prev => ({ ...prev, [payload.new.key]: payload.new.value }));
+                    }
+                })
+                .subscribe();
+        } catch (err) {
+            console.warn('[Z Typers] Supabase realtime subscription failed:', err.message);
+        }
 
         return () => {
-            supabase.removeChannel(channel);
+            if (channel) {
+                try { supabase.removeChannel(channel); } catch (e) { /* ignore */ }
+            }
         };
     }, []);
 
