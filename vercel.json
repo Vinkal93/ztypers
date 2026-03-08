@@ -1,8 +1,15 @@
 {
+    "redirects": [
+        {
+            "source": "/sitemap",
+            "destination": "/sitemap.xml",
+            "statusCode": 308
+        }
+    ],
     "rewrites": [
         {
             "source": "/(.*)",
-            "destination": "/"
+            "destination": "/index.html"
         }
     ]
 }
