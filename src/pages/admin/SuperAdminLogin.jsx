@@ -25,13 +25,15 @@ const COOLDOWNS = [30000, 60000, 300000, 900000, 1800000];
 
 export default function SuperAdminLogin() {
     const navigate = useNavigate();
-    const { isSuperAdmin, loginSuperAdmin, loading: authLoading } = useSuperAdmin();
+    const { isSuperAdmin, loginSuperAdmin, signupSuperAdmin, loading: authLoading } = useSuperAdmin();
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [showPw, setShowPw] = useState(false);
     const [error, setError] = useState('');
+    const [success, setSuccess] = useState('');
     const [loading, setLoading] = useState(false);
     const [lockCountdown, setLockCountdown] = useState(0);
+    const [isSignupMode, setIsSignupMode] = useState(false);
 
     // Check lockout timer
     useEffect(() => {
@@ -55,14 +57,17 @@ export default function SuperAdminLogin() {
         }
     }, [isSuperAdmin, authLoading, navigate]);
 
-    const handleLogin = async (e) => {
+    const handleSubmit = async (e) => {
         e.preventDefault();
         setError('');
+        setSuccess('');
 
-        const { attempts, lockedUntil } = getLockout();
-        if (lockedUntil > Date.now()) {
-            setError('Account locked. Please wait.');
-            return;
+        if (!isSignupMode) {
+            const { attempts, lockedUntil } = getLockout();
+            if (lockedUntil > Date.now()) {
+                setError('Account locked. Please wait.');
+                return;
+            }
         }
 
         if (!email.trim() || !password.trim()) {
@@ -70,26 +75,45 @@ export default function SuperAdminLogin() {
             return;
         }
 
+        if (isSignupMode && password.length < 6) {
+            setError('Password must be at least 6 characters');
+            return;
+        }
+
         setLoading(true);
         try {
-            await loginSuperAdmin(email.trim(), password);
-            // SUCCESS — clear lockout, navigate
-            setLockoutData(0);
-            navigate('/SU/dashboard', { replace: true });
-        } catch (err) {
-            const newAttempts = attempts + 1;
-            if (err.message?.includes('Invalid login')) {
-                setError('Invalid credentials');
-            } else if (err.message?.includes('Email not confirmed')) {
-                setError('Email not confirmed. Check your inbox.');
+            if (isSignupMode) {
+                const data = await signupSuperAdmin(email.trim(), password);
+                if (data?.user?.identities?.length === 0) {
+                    setError('This email is already registered. Try logging in.');
+                } else {
+                    setSuccess('✅ Account created! You can now log in.');
+                    setIsSignupMode(false);
+                }
             } else {
-                setError(err.message || 'Login failed');
+                await loginSuperAdmin(email.trim(), password);
+                setLockoutData(0);
+                navigate('/SU/dashboard', { replace: true });
             }
-            if (newAttempts >= MAX_ATTEMPTS) {
-                const cooldown = COOLDOWNS[Math.min(Math.floor(newAttempts / MAX_ATTEMPTS) - 1, COOLDOWNS.length - 1)];
-                setLockoutData(newAttempts, cooldown);
+        } catch (err) {
+            if (!isSignupMode) {
+                const { attempts } = getLockout();
+                const newAttempts = attempts + 1;
+                if (err.message?.includes('Invalid login')) {
+                    setError('Invalid credentials');
+                } else if (err.message?.includes('Email not confirmed')) {
+                    setError('Email not confirmed. Check your inbox.');
+                } else {
+                    setError(err.message || 'Login failed');
+                }
+                if (newAttempts >= MAX_ATTEMPTS) {
+                    const cooldown = COOLDOWNS[Math.min(Math.floor(newAttempts / MAX_ATTEMPTS) - 1, COOLDOWNS.length - 1)];
+                    setLockoutData(newAttempts, cooldown);
+                } else {
+                    setLockoutData(newAttempts);
+                }
             } else {
-                setLockoutData(newAttempts);
+                setError(err.message || 'Signup failed');
             }
         }
         setLoading(false);
@@ -152,6 +176,17 @@ export default function SuperAdminLogin() {
                     </div>
                 )}
 
+                {/* Success */}
+                {success && (
+                    <div style={{
+                        background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.15)',
+                        borderRadius: '10px', padding: '12px', marginBottom: '16px',
+                        fontSize: '12px', color: '#10b981', fontWeight: 600,
+                    }}>
+                        {success}
+                    </div>
+                )}
+
                 {/* Error */}
                 {error && (
                     <div style={{
@@ -164,7 +199,7 @@ export default function SuperAdminLogin() {
                 )}
 
                 {/* Form */}
-                <form onSubmit={handleLogin}>
+                <form onSubmit={handleSubmit}>
                     <div style={{ marginBottom: '16px' }}>
                         <label style={{ fontSize: '12px', fontWeight: 600, color: 'rgba(255,255,255,0.5)', display: 'block', marginBottom: '6px' }}>
                             Email
@@ -223,11 +258,21 @@ export default function SuperAdminLogin() {
                             transition: 'all 0.2s',
                             opacity: loading ? 0.7 : 1,
                         }}>
-                        {loading ? '🔐 Verifying...' : lockCountdown > 0 ? `Locked (${formatTime(lockCountdown)})` : '🔐 Access Super Admin'}
+                        {loading ? (isSignupMode ? '🔐 Creating...' : '🔐 Verifying...') : lockCountdown > 0 ? `Locked (${formatTime(lockCountdown)})` : (isSignupMode ? '🔐 Create Super Admin Account' : '🔐 Access Super Admin')}
                     </button>
                 </form>
 
-                <div style={{ textAlign: 'center', marginTop: '20px', fontSize: '11px', color: 'rgba(255,255,255,0.2)' }}>
+                <div style={{ textAlign: 'center', marginTop: '20px' }}>
+                    <button onClick={() => { setIsSignupMode(!isSignupMode); setError(''); setSuccess(''); }}
+                        style={{
+                            background: 'none', border: 'none', cursor: 'pointer',
+                            fontSize: '12px', color: 'rgba(124,58,237,0.7)', fontWeight: 600,
+                        }}>
+                        {isSignupMode ? '← Back to Login' : '🆕 First Time? Create Account'}
+                    </button>
+                </div>
+
+                <div style={{ textAlign: 'center', marginTop: '12px', fontSize: '11px', color: 'rgba(255,255,255,0.2)' }}>
                     Protected by Supabase Auth
                 </div>
             </div>

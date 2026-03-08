@@ -2,14 +2,15 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { db } from '../../lib/firebase';
 import { getFunctions, httpsCallable } from 'firebase/functions';
-import { collection, getDocs, onSnapshot, query, where, orderBy, limit as firestoreLimit } from 'firebase/firestore';
+import { collection, getDocs, onSnapshot, query, where, orderBy, limit as firestoreLimit, doc as fireDoc, setDoc, deleteDoc, updateDoc } from 'firebase/firestore';
 import { useSuperAdmin } from '../../context/SuperAdminContext';
 import {
     FiShield, FiUsers, FiActivity, FiLogOut, FiSun, FiMoon, FiSearch,
     FiUserPlus, FiUserCheck, FiUserX, FiLock, FiUnlock, FiAlertTriangle,
     FiRefreshCw, FiGlobe, FiSmartphone, FiMonitor, FiCalendar, FiSettings,
     FiZap, FiChevronDown, FiChevronRight, FiCopy, FiCheck, FiBell,
-    FiTrash2, FiSlash, FiPlusCircle,
+    FiTrash2, FiSlash, FiPlusCircle, FiDollarSign, FiAward, FiFileText,
+    FiDatabase, FiDownload, FiEdit, FiSave, FiMessageSquare,
 } from 'react-icons/fi';
 
 const functions = getFunctions(undefined, 'asia-south1');
@@ -79,6 +80,25 @@ export default function SuperAdminDashboard() {
     const [eraseStep, setEraseStep] = useState(0); // 0=select, 1=type name, 2=final confirm
     const [erasing, setErasing] = useState(false);
 
+    // Payment settings
+    const [paymentConfig, setPaymentConfig] = useState({ razorpayKey: '', razorpaySecret: '', stripeKey: '', stripeSecret: '', activeGateway: 'razorpay', commissionPercent: '5' });
+    const [savingPayment, setSavingPayment] = useState(false);
+
+    // Content management
+    const [siteContent, setSiteContent] = useState({ siteName: 'Z Typers', tagline: '', faq: '', terms: '', privacy: '', bannerText: '' });
+    const [savingContent, setSavingContent] = useState(false);
+
+    // Announcements
+    const [announcements, setAnnouncements] = useState([]);
+    const [newAnnouncement, setNewAnnouncement] = useState({ title: '', message: '', type: 'info' });
+
+    // Site settings
+    const [siteSettings, setSiteSettings] = useState({ theme: 'dark', emailNotifications: true, maintenanceMessage: '' });
+    const [savingSettings, setSavingSettings] = useState(false);
+
+    // System logs
+    const [systemLogs, setSystemLogs] = useState([]);
+
     // ── Verify auth (Supabase) ──
     useEffect(() => {
         if (!authLoading && !isSuperAdmin) {
@@ -111,8 +131,26 @@ export default function SuperAdminDashboard() {
             logs.sort((a, b) => (b.loginAt || '').localeCompare(a.loginAt || ''));
             setSessionLogs(logs.slice(0, 200));
         });
+        // Payment config
+        const unsubPay = onSnapshot(fireDoc(db, 'appConfig', 'payment'), snap => {
+            if (snap.exists()) setPaymentConfig(prev => ({ ...prev, ...snap.data() }));
+        });
+        // Site content
+        const unsubContent = onSnapshot(fireDoc(db, 'appConfig', 'content'), snap => {
+            if (snap.exists()) setSiteContent(prev => ({ ...prev, ...snap.data() }));
+        });
+        // Site settings
+        const unsubSettings = onSnapshot(fireDoc(db, 'appConfig', 'settings'), snap => {
+            if (snap.exists()) setSiteSettings(prev => ({ ...prev, ...snap.data() }));
+        });
+        // Announcements
+        const unsubAnn = onSnapshot(collection(db, 'announcements'), snap => {
+            const ann = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+            ann.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+            setAnnouncements(ann);
+        });
 
-        return () => { unsubUsers(); unsubStudents(); unsubEvents(); unsubInst(); };
+        return () => { unsubUsers(); unsubStudents(); unsubEvents(); unsubInst(); unsubPay(); unsubContent(); unsubSettings(); unsubAnn(); };
     }, [verified]);
 
     // ── Fetch admin logs via Cloud Function ──
@@ -280,6 +318,85 @@ export default function SuperAdminDashboard() {
         setErasing(false);
     };
 
+    // Save payment config
+    const handleSavePayment = async () => {
+        setSavingPayment(true);
+        try {
+            await setDoc(fireDoc(db, 'appConfig', 'payment'), { ...paymentConfig, updatedAt: new Date().toISOString() }, { merge: true });
+            setActionMsg({ text: 'Payment settings saved', type: 'success' });
+        } catch (e) { setActionMsg({ text: e.message, type: 'error' }); }
+        setSavingPayment(false);
+    };
+
+    // Save site content
+    const handleSaveContent = async () => {
+        setSavingContent(true);
+        try {
+            await setDoc(fireDoc(db, 'appConfig', 'content'), { ...siteContent, updatedAt: new Date().toISOString() }, { merge: true });
+            setActionMsg({ text: 'Content saved', type: 'success' });
+        } catch (e) { setActionMsg({ text: e.message, type: 'error' }); }
+        setSavingContent(false);
+    };
+
+    // Save site settings
+    const handleSaveSettings = async () => {
+        setSavingSettings(true);
+        try {
+            await setDoc(fireDoc(db, 'appConfig', 'settings'), { ...siteSettings, updatedAt: new Date().toISOString() }, { merge: true });
+            setActionMsg({ text: 'Settings saved', type: 'success' });
+        } catch (e) { setActionMsg({ text: e.message, type: 'error' }); }
+        setSavingSettings(false);
+    };
+
+    // Publish announcement
+    const handlePublishAnnouncement = async () => {
+        if (!newAnnouncement.title || !newAnnouncement.message) return;
+        try {
+            const id = Date.now().toString();
+            await setDoc(fireDoc(db, 'announcements', id), { ...newAnnouncement, createdAt: new Date().toISOString(), createdBy: currentUser?.email || 'super_admin' });
+            setActionMsg({ text: 'Announcement published', type: 'success' });
+            setNewAnnouncement({ title: '', message: '', type: 'info' });
+        } catch (e) { setActionMsg({ text: e.message, type: 'error' }); }
+    };
+
+    // Delete announcement
+    const handleDeleteAnnouncement = async (id) => {
+        if (!confirm('Delete this announcement?')) return;
+        try {
+            await deleteDoc(fireDoc(db, 'announcements', id));
+            setActionMsg({ text: 'Announcement deleted', type: 'success' });
+        } catch (e) { setActionMsg({ text: e.message, type: 'error' }); }
+    };
+
+    // Toggle event status
+    const handleToggleEvent = async (eventId, enabled) => {
+        try {
+            await updateDoc(fireDoc(db, 'events', eventId), { enabled, updatedAt: new Date().toISOString() });
+            setActionMsg({ text: enabled ? 'Event enabled' : 'Event disabled', type: 'success' });
+        } catch (e) { setActionMsg({ text: e.message, type: 'error' }); }
+    };
+
+    // Delete event
+    const handleDeleteEvent = async (eventId) => {
+        if (!confirm('Are you sure you want to delete this event?')) return;
+        try {
+            await deleteDoc(fireDoc(db, 'events', eventId));
+            setActionMsg({ text: 'Event deleted', type: 'success' });
+        } catch (e) { setActionMsg({ text: e.message, type: 'error' }); }
+    };
+
+    // Export data to CSV
+    const handleExportCSV = (dataArray, filename) => {
+        if (!dataArray.length) { setActionMsg({ text: 'No data to export', type: 'error' }); return; }
+        const headers = Object.keys(dataArray[0]);
+        const csv = [headers.join(','), ...dataArray.map(row => headers.map(h => JSON.stringify(row[h] ?? '')).join(','))].join('\n');
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a'); a.href = url; a.download = `${filename}.csv`; a.click();
+        URL.revokeObjectURL(url);
+        setActionMsg({ text: `Exported ${dataArray.length} rows to ${filename}.csv`, type: 'success' });
+    };
+
     // ── Computed ──
     const totalAdmins = allUsers.filter(u => u.role === 'admin' || u.role === 'superadmin').length;
     const totalSuperAdmins = allUsers.filter(u => u.role === 'superadmin').length;
@@ -319,7 +436,13 @@ export default function SuperAdminDashboard() {
         { id: 'admins', label: '👔 Admins', icon: FiUserPlus },
         { id: 'promote', label: '🛡 Promote', icon: FiUserCheck },
         { id: 'institutes', label: '🏫 Institutes', icon: FiGlobe },
+        { id: 'payments', label: '💰 Payments', icon: FiDollarSign },
+        { id: 'events', label: '📅 Events', icon: FiCalendar },
+        { id: 'content', label: '📝 Content', icon: FiFileText },
+        { id: 'announce', label: '📢 Announce', icon: FiBell },
         { id: 'security', label: '🔒 Security', icon: FiLock },
+        { id: 'logs', label: '📋 Logs', icon: FiActivity },
+        { id: 'database', label: '🗄 Database', icon: FiDatabase },
         { id: 'control', label: '⚙ Control', icon: FiSettings },
     ];
 
