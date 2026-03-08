@@ -1,10 +1,17 @@
 import { Link } from 'react-router-dom';
 import { FiGithub, FiGlobe, FiMail, FiCode, FiZap, FiArrowLeft, FiExternalLink } from 'react-icons/fi';
 import vinkalPhoto from '../assets/Vinkal prajapati.jpg';
+import Seo from '../components/Seo';
 
 export default function About() {
     return (
         <div className="page-container fade-in">
+            <Seo
+                title="About Vinkal Prajapati | Developer of Z Typers"
+                description="Learn more about Vinkal Prajapati, the visionary full-stack developer and creator of Z Typers, India's best live typing platform."
+                keywords="Vinkal Prajapati, Vinkal Prajapati Developer, ZTypers Founder, Vinkal Prajapati typing platform, Indian software developer"
+                canonicalUrl="/about"
+            />
             <Link to="/" className="btn btn-secondary" style={{ marginBottom: '24px' }}>
                 <FiArrowLeft /> Back to Home
             </Link>
@@ -71,8 +78,8 @@ export default function About() {
                     </p>
                 </div>
             </div>
-            
-                
+
+
             {/* Skills */}
             <div className="glass-card" style={{ marginBottom: '32px' }}>
                 <h2 style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: '22px', marginBottom: '20px', textAlign: 'center' }}>

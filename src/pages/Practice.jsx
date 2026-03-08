@@ -3,6 +3,7 @@ import { calculateWPM, calculateAccuracy, calculateFinalScore, formatTime } from
 import { blockCopyPaste } from '../lib/antiCheat';
 import { allPracticeParagraphs } from '../constants/practiceParagraphs';
 import { FiZap, FiTarget, FiClock, FiRefreshCw, FiHash, FiDelete, FiAward } from 'react-icons/fi';
+import Seo from '../components/Seo';
 
 const TIME_OPTIONS = [15, 30, 60, 120, 300];
 
@@ -130,6 +131,12 @@ export default function Practice() {
 
     return (
         <div className="page-container fade-in">
+            <Seo
+                title="Practice Typing Speed Test | WPM Tracker"
+                description="Improve your typing speed and accuracy for free. Test your WPM, view real-time error tracking, and become a faster typist with Z Typers."
+                keywords="typing practice, typing speed test, WPM test, improve typing speed, free typing test, online typing tool, check typing speed"
+                canonicalUrl="/practice"
+            />
             <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '16px' }}>
                 <div>
                     <h1 className="page-title">⌨️ Practice Typing</h1>

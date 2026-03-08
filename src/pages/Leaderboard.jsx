@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { FiAward, FiZap, FiTarget, FiHash, FiUsers } from 'react-icons/fi';
+import Seo from '../components/Seo';
 
 export default function Leaderboard() {
     const [participants, setParticipants] = useState([]);
@@ -18,6 +19,12 @@ export default function Leaderboard() {
 
     return (
         <div className="page-container fade-in">
+            <Seo
+                title="Live Typing Leaderboard & Competition Rankings"
+                description="View live typing competition rankings on Z Typers. See top WPM scores, accuracy stats, and find out who is the fastest typist in India."
+                keywords="typing leaderboard, live typing competition rankings, top WPM scorers, fastest typists India, typing tournament results"
+                canonicalUrl="/leaderboard"
+            />
             <div className="page-header">
                 <h1 className="page-title"><FiAward style={{ marginRight: '8px' }} /> Rankings</h1>
                 <p className="page-subtitle">Live leaderboard — all playground participants ranked by score</p>

@@ -26,12 +26,15 @@ function Counter({ value, suffix = '' }) {
     return <span>{count.toLocaleString()}{suffix}</span>;
 }
 
+import Seo from '../components/Seo';
+
 export default function Landing() {
     const { user, isAdmin } = useAuth();
     const adminMode = user && isAdmin && isAdmin();
 
     return (
         <div style={{ minHeight: '100vh' }}>
+            <Seo />
             {/* ── Brand strip ── */}
             <div style={{
                 background: 'var(--accent-gradient)', padding: '10px 24px', textAlign: 'center',

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { collection, onSnapshot, doc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { FiRadio, FiUsers, FiZap, FiTarget, FiAward, FiX, FiHash, FiDelete, FiClock } from 'react-icons/fi';
+import Seo from '../components/Seo';
 
 export default function LiveViewer() {
     const [participants, setParticipants] = useState([]);
@@ -45,6 +46,12 @@ export default function LiveViewer() {
 
     return (
         <div className="page-container fade-in">
+            <Seo
+                title="Watch Live Typing Competitions | Real-Time Stats"
+                description="Watch real-time live typing competitions on Z Typers. See top typists from India compete for accuracy and speed in real-time."
+                keywords="live typing competition, watch typing test live, real-time typing tournament, typing speed live, live wpm tracking"
+                canonicalUrl="/live"
+            />
             <div className="page-header">
                 <h1 className="page-title"><FiRadio style={{ marginRight: '8px' }} /> Live Competition</h1>
                 <p className="page-subtitle">Watch all participants compete in real-time — updates every second!</p>
