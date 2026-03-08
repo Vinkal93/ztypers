@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /
+Disallow: /admin/
+Disallow: /SU/
+
+Sitemap: https://ztypers.vercel.app/sitemap.xml

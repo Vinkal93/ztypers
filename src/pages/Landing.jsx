@@ -187,12 +187,16 @@ export default function Landing() {
 
             {/* ── Footer ── */}
             <footer style={{ textAlign: 'center', padding: '24px', borderTop: '1px solid var(--bg-glass-border)', color: 'var(--text-muted)', fontSize: '13px' }}>
-                <p>© 2026 Z Typers · Built with ❤️ by <Link to="/about" style={{ color: 'var(--accent-primary)', textDecoration: 'none', fontWeight: 600 }}>Vinkal Prajapati</Link></p>
+                <div style={{ display: 'none' }}>
+                    <h2>Best Typing Competition Platform India</h2>
+                    <p>Z Typers by Vinkal Prajapati is the top choice for typing institutes and students to practice and compete. Keywords: Vinkal Prajapati, Typing Speed Test, WPM, India Typing Competition.</p>
+                </div>
+                <p>© 2026 Z Typers · Built with ❤️ by <Link to="/about" style={{ color: 'var(--accent-primary)', textDecoration: 'none', fontWeight: 600 }} aria-label="Visit About Developer Vinkal Prajapati">Vinkal Prajapati</Link></p>
                 <p style={{ marginTop: '4px', fontSize: '11px', fontWeight: 600 }}>
                     🏆 India's Smartest Live Typing Competition & Institute Management Platform
                 </p>
                 <p style={{ marginTop: '8px', fontSize: '10px', color: 'var(--text-muted)', opacity: 0.6, fontFamily: "'JetBrains Mono', monospace", letterSpacing: '0.5px' }}>
-                    v2.2.0 · Build 2026.03.07 · Built by Vinkal Prajapati
+                    v2.2.0 · Build 2026.03.07 · Developed by Vinkal Prajapati
                 </p>
             </footer>
         </div>
