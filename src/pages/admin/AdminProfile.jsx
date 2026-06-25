@@ -43,6 +43,7 @@ export default function AdminProfile() {
     // Payment state
     const [razorpayKeyId, setRazorpayKeyId] = useState('');
     const [razorpayKeySecret, setRazorpayKeySecret] = useState('');
+    const [razorpayWebhookSecret, setRazorpayWebhookSecret] = useState('');
     const [paymentMode, setPaymentMode] = useState('test');
     const [showSecret, setShowSecret] = useState(false);
     const [paymentSaving, setPaymentSaving] = useState(false);
@@ -91,6 +92,7 @@ export default function AdminProfile() {
                         const data = payDoc.data();
                         setRazorpayKeyId(data.razorpayKeyId || '');
                         setRazorpayKeySecret(data.razorpayKeySecret || '');
+                        setRazorpayWebhookSecret(data.razorpayWebhookSecret || '');
                         setPaymentMode(data.paymentMode || 'test');
                         setActiveGateway(data.activeGateway || 'razorpay');
                         setStripePublicKey(data.stripePublicKey || '');
@@ -181,6 +183,7 @@ export default function AdminProfile() {
                 activeGateway,
                 razorpayKeyId: razorpayKeyId.trim(),
                 razorpayKeySecret: razorpayKeySecret.trim(),
+                razorpayWebhookSecret: razorpayWebhookSecret.trim(),
                 stripePublicKey: stripePublicKey.trim(),
                 stripeSecretKey: stripeSecretKey.trim(),
                 cashfreeAppId: cashfreeAppId.trim(),
@@ -191,6 +194,20 @@ export default function AdminProfile() {
                 updatedAt: new Date().toISOString(),
                 updatedBy: user.uid,
             });
+
+            // Sync public payment metadata on the main institute document for client-side checks
+            const isConfigured = 
+                (activeGateway === 'razorpay' && !!razorpayKeyId.trim()) ||
+                (activeGateway === 'stripe' && !!stripePublicKey.trim()) ||
+                (activeGateway === 'cashfree' && !!cashfreeAppId.trim()) ||
+                (activeGateway === 'payu' && !!payuMerchantKey.trim());
+
+            await updateInstitute({
+                activeGateway,
+                paymentMode,
+                paymentConfigured: isConfigured,
+            });
+
             setPaymentMsg({ type: 'success', text: 'Payment settings saved securely!' });
             setTimeout(() => setPaymentMsg({ type: '', text: '' }), 4000);
         } catch (err) {
@@ -480,7 +497,7 @@ export default function AdminProfile() {
                                     placeholder={paymentMode === 'test' ? 'rzp_test_xxxxxxxxxxxx' : 'rzp_live_xxxxxxxxxxxx'}
                                     style={{ fontFamily: 'var(--font-mono)', fontSize: '13px' }} />
                             </div>
-                            <div className="form-group" style={{ marginBottom: 0 }}>
+                            <div className="form-group" style={{ marginBottom: '16px' }}>
                                 <label className="input-label"><FiKey size={13} style={{ marginRight: '6px' }} />Key Secret</label>
                                 <div style={{ position: 'relative' }}>
                                     <input type={showSecret ? 'text' : 'password'} className="input" value={razorpayKeySecret}
@@ -495,6 +512,18 @@ export default function AdminProfile() {
                                         {showSecret ? <FiEyeOff size={16} /> : <FiEye size={16} />}
                                     </button>
                                 </div>
+                            </div>
+                            <div className="form-group" style={{ marginBottom: '16px' }}>
+                                <label className="input-label"><FiKey size={13} style={{ marginRight: '6px' }} />Webhook Secret (Optional)</label>
+                                <input type="text" className="input" value={razorpayWebhookSecret} onChange={e => setRazorpayWebhookSecret(e.target.value)}
+                                    placeholder="Enter your webhook secret for event sync"
+                                    style={{ fontFamily: 'var(--font-mono)', fontSize: '13px' }} />
+                            </div>
+                            <div style={{ fontSize: '11px', color: 'var(--text-muted)', lineHeight: 1.5, background: 'rgba(255,255,255,0.02)', padding: '10px', borderRadius: 'var(--radius-sm)', border: '1px dashed var(--bg-glass-border)' }}>
+                                <span style={{ fontWeight: 700, color: 'var(--text-secondary)' }}>Webhook URL:</span><br />
+                                <code style={{ fontFamily: 'var(--font-mono)', color: 'var(--accent-primary)', wordBreak: 'break-all' }}>
+                                    https://asia-south1-z-typers.cloudfunctions.net/razorpayWebhook?instituteId={userData?.instituteId || 'YOUR_INSTITUTE_ID'}
+                                </code>
                             </div>
                         </div>
                     )}

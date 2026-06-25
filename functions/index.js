@@ -1,4 +1,4 @@
-const { onCall, HttpsError } = require("firebase-functions/v2/https");
+const { onCall, HttpsError, onRequest } = require("firebase-functions/v2/https");
 const { initializeApp } = require("firebase-admin/app");
 const { getAuth } = require("firebase-admin/auth");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
@@ -464,4 +464,312 @@ exports.eraseInstituteData = onCall({ region: "asia-south1" }, async (request) =
         studentsDeleted: studentsSnap.size,
         batchesDeleted: batchesSnap.size,
     };
+});
+
+// ═══════════════════════════════════════════════════════════
+// 12. Create Razorpay Order
+// ═══════════════════════════════════════════════════════════
+exports.createRazorpayOrder = onCall({ region: "asia-south1" }, async (request) => {
+    const { instituteId, amount, currency, notes, userId } = request.data || {};
+
+    if (!amount || typeof amount !== "number" || amount <= 0) {
+        throw new HttpsError("invalid-argument", "A valid amount greater than 0 is required");
+    }
+
+    try {
+        let keyId, keySecret, paymentMode;
+
+        // If instituteId is provided, load specific keys. Otherwise, fallback to global platform keys.
+        if (instituteId && instituteId !== "undefined" && instituteId !== "null" && instituteId.trim() !== "") {
+            // Fetch payment settings from Firestore for the specific institute
+            const settingsRef = db.collection("institutes")
+                .doc(instituteId)
+                .collection("settings")
+                .doc("payment");
+            const settingsSnap = await settingsRef.get();
+
+            if (!settingsSnap.exists) {
+                throw new HttpsError("failed-precondition", "Payment gateway is not configured for this institute");
+            }
+
+            const data = settingsSnap.data();
+            keyId = data.razorpayKeyId;
+            keySecret = data.razorpayKeySecret;
+            paymentMode = data.paymentMode;
+        } else {
+            // Fetch global settings
+            const publicSnap = await db.collection("appConfig").doc("payment").get();
+            const privateSnap = await db.collection("appConfig").doc("payment_private").get();
+
+            if (!publicSnap.exists || !privateSnap.exists) {
+                throw new HttpsError("failed-precondition", "Global payment gateway is not configured");
+            }
+
+            const publicData = publicSnap.data();
+            const privateData = privateSnap.data();
+
+            keyId = publicData.razorpayKey || publicData.razorpayKeyId;
+            keySecret = privateData.razorpaySecret || privateData.razorpayKeySecret;
+            paymentMode = publicData.paymentMode || "test";
+        }
+
+        if (!keyId || !keySecret) {
+            throw new HttpsError("failed-precondition", "Razorpay credentials are not fully configured");
+        }
+
+        const Razorpay = require("razorpay");
+        const razorpay = new Razorpay({
+            key_id: keyId,
+            key_secret: keySecret,
+        });
+
+        const amountInPaise = Math.round(amount * 100);
+        const options = {
+            amount: amountInPaise,
+            currency: currency || "INR",
+            receipt: `rcpt_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+            notes: notes || {},
+        };
+
+        const order = await razorpay.orders.create(options);
+
+        // Save order details to Firestore
+        const paymentDocData = {
+            orderId: order.id,
+            amount: amount, // standard amount in Rupees
+            amountInPaise: order.amount,
+            currency: order.currency,
+            receipt: order.receipt,
+            status: "created",
+            mode: paymentMode || "test",
+            userId: userId || null,
+            createdAt: FieldValue.serverTimestamp(),
+            metadata: notes || {},
+        };
+
+        if (instituteId && instituteId !== "undefined" && instituteId !== "null" && instituteId.trim() !== "") {
+            await db.collection("institutes")
+                .doc(instituteId)
+                .collection("payments")
+                .doc(order.id)
+                .set(paymentDocData);
+        } else {
+            await db.collection("payments")
+                .doc(order.id)
+                .set(paymentDocData);
+        }
+
+        return {
+            keyId: keyId,
+            orderId: order.id,
+            amount: order.amount, // in paise
+            currency: order.currency,
+        };
+    } catch (error) {
+        console.error("Error creating Razorpay order:", error);
+        if (error instanceof HttpsError) {
+            throw error;
+        }
+        throw new HttpsError("internal", error.message || "Failed to create Razorpay order");
+    }
+});
+
+// ═══════════════════════════════════════════════════════════
+// 13. Verify Razorpay Payment Signature
+// ═══════════════════════════════════════════════════════════
+exports.verifyRazorpayPayment = onCall({ region: "asia-south1" }, async (request) => {
+    const { instituteId, razorpayOrderId, razorpayPaymentId, razorpaySignature } = request.data || {};
+
+    if (!razorpayOrderId || !razorpayPaymentId || !razorpaySignature) {
+        throw new HttpsError("invalid-argument", "Missing required verification fields");
+    }
+
+    try {
+        let keySecret;
+
+        if (instituteId && instituteId !== "undefined" && instituteId !== "null" && instituteId.trim() !== "") {
+            const settingsRef = db.collection("institutes")
+                .doc(instituteId)
+                .collection("settings")
+                .doc("payment");
+            const settingsSnap = await settingsRef.get();
+
+            if (!settingsSnap.exists) {
+                throw new HttpsError("failed-precondition", "Payment configuration not found");
+            }
+
+            keySecret = settingsSnap.data().razorpayKeySecret;
+        } else {
+            const privateSnap = await db.collection("appConfig").doc("payment_private").get();
+            if (!privateSnap.exists) {
+                throw new HttpsError("failed-precondition", "Global payment configuration not found");
+            }
+            keySecret = privateSnap.data().razorpaySecret || privateSnap.data().razorpayKeySecret;
+        }
+
+        if (!keySecret) {
+            throw new HttpsError("failed-precondition", "Razorpay secret key not found");
+        }
+
+        // Verify signature
+        const crypto = require("crypto");
+        const generatedSignature = crypto
+            .createHmac("sha256", keySecret)
+            .update(razorpayOrderId + "|" + razorpayPaymentId)
+            .digest("hex");
+
+        const isValid = generatedSignature === razorpaySignature;
+
+        const paymentRef = (instituteId && instituteId !== "undefined" && instituteId !== "null" && instituteId.trim() !== "")
+            ? db.collection("institutes").doc(instituteId).collection("payments").doc(razorpayOrderId)
+            : db.collection("payments").doc(razorpayOrderId);
+
+        const paymentSnap = await paymentRef.get();
+
+        // Avoid duplicate updates or duplicate actions if already processed
+        if (paymentSnap.exists && paymentSnap.data().status === "success") {
+            return { success: true };
+        }
+
+        if (isValid) {
+            // Update Firestore log to success
+            await paymentRef.set({
+                status: "success",
+                paymentId: razorpayPaymentId,
+                signature: razorpaySignature,
+                completedAt: FieldValue.serverTimestamp(),
+            }, { merge: true });
+
+            return { success: true };
+        } else {
+            // Update Firestore log to failed
+            await paymentRef.set({
+                status: "failed",
+                paymentId: razorpayPaymentId,
+                signature: razorpaySignature,
+                error: "Signature verification failed",
+                completedAt: FieldValue.serverTimestamp(),
+            }, { merge: true });
+
+            return { success: false, error: "Signature verification failed" };
+        }
+    } catch (error) {
+        console.error("Error verifying Razorpay payment:", error);
+        if (error instanceof HttpsError) {
+            throw error;
+        }
+        throw new HttpsError("internal", error.message || "Failed to verify Razorpay payment");
+    }
+});
+
+// ═══════════════════════════════════════════════════════════
+// 14. Razorpay Webhook Receiver
+// ═══════════════════════════════════════════════════════════
+exports.razorpayWebhook = onRequest({ region: "asia-south1" }, async (req, res) => {
+    // Only allow POST requests
+    if (req.method !== "POST") {
+        return res.status(405).send("Method Not Allowed");
+    }
+
+    const { instituteId } = req.query;
+    const signature = req.headers["x-razorpay-signature"];
+    if (!signature) {
+        return res.status(400).send("Missing x-razorpay-signature header");
+    }
+
+    try {
+        let webhookSecret;
+
+        // If instituteId is provided, get specific webhook secret. Otherwise, get global webhook secret.
+        if (instituteId && instituteId !== "undefined" && instituteId !== "null" && instituteId.trim() !== "") {
+            const settingsRef = db.collection("institutes")
+                .doc(instituteId)
+                .collection("settings")
+                .doc("payment");
+            const settingsSnap = await settingsRef.get();
+
+            if (!settingsSnap.exists) {
+                return res.status(400).send("Payment settings not found for this institute");
+            }
+
+            webhookSecret = settingsSnap.data().razorpayWebhookSecret;
+        } else {
+            const privateSnap = await db.collection("appConfig").doc("payment_private").get();
+            if (!privateSnap.exists) {
+                return res.status(400).send("Global payment settings not found");
+            }
+            webhookSecret = privateSnap.data().razorpayWebhookSecret || privateSnap.data().razorpaySecret;
+        }
+
+        if (!webhookSecret) {
+            return res.status(400).send("Webhook secret not configured");
+        }
+
+        // Verify webhook signature
+        const crypto = require("crypto");
+        const computedSignature = crypto
+            .createHmac("sha256", webhookSecret)
+            .update(req.rawBody)
+            .digest("hex");
+
+        if (computedSignature !== signature) {
+            return res.status(400).send("Invalid webhook signature");
+        }
+
+        // Extract payload details
+        const event = req.body.event;
+        const payload = req.body.payload;
+
+        if (event === "payment.captured") {
+            const paymentEntity = payload.payment.entity;
+            const orderId = paymentEntity.order_id;
+            const paymentId = paymentEntity.id;
+            const amountInPaise = paymentEntity.amount;
+
+            if (orderId) {
+                const paymentRef = (instituteId && instituteId !== "undefined" && instituteId !== "null" && instituteId.trim() !== "")
+                    ? db.collection("institutes").doc(instituteId).collection("payments").doc(orderId)
+                    : db.collection("payments").doc(orderId);
+                
+                const snap = await paymentRef.get();
+                if (!snap.exists || snap.data().status !== "success") {
+                    await paymentRef.set({
+                        status: "success",
+                        paymentId: paymentId,
+                        amount: amountInPaise / 100,
+                        amountInPaise: amountInPaise,
+                        currency: paymentEntity.currency,
+                        webhookVerified: true,
+                        completedAt: FieldValue.serverTimestamp(),
+                    }, { merge: true });
+                    console.log(`Payment successful logged via Webhook: ${paymentId} for Order: ${orderId}`);
+                }
+            }
+        } else if (event === "payment.failed") {
+            const paymentEntity = payload.payment.entity;
+            const orderId = paymentEntity.order_id;
+            const paymentId = paymentEntity.id;
+            const errorDescription = paymentEntity.error_description || "Payment failed";
+
+            if (orderId) {
+                const paymentRef = (instituteId && instituteId !== "undefined" && instituteId !== "null" && instituteId.trim() !== "")
+                    ? db.collection("institutes").doc(instituteId).collection("payments").doc(orderId)
+                    : db.collection("payments").doc(orderId);
+                
+                await paymentRef.set({
+                    status: "failed",
+                    paymentId: paymentId,
+                    error: errorDescription,
+                    webhookVerified: true,
+                    completedAt: FieldValue.serverTimestamp(),
+                }, { merge: true });
+                console.log(`Payment failed logged via Webhook: ${paymentId} for Order: ${orderId}`);
+            }
+        }
+
+        return res.status(200).send("OK");
+    } catch (error) {
+        console.error("Webhook processing error:", error);
+        return res.status(500).send("Internal Server Error");
+    }
 });

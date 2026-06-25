@@ -1,7 +1,199 @@
 import { useState, useEffect } from 'react';
-import { collection, query, where, onSnapshot, addDoc, updateDoc, doc } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, addDoc, updateDoc, doc, getDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
-import { FiCalendar, FiClock, FiDollarSign, FiUsers, FiZap, FiAward, FiCheckCircle, FiSearch, FiFilter, FiCreditCard } from 'react-icons/fi';
+import { FiCalendar, FiClock, FiDollarSign, FiUsers, FiZap, FiAward, FiCheckCircle, FiSearch, FiFilter, FiCreditCard, FiDownload } from 'react-icons/fi';
+
+const downloadReceipt = ({ eventTitle, amount, paymentId, name, email, phone }) => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+        alert('Please allow popups to download the receipt');
+        return;
+    }
+    const date = new Date().toLocaleString();
+    const receiptHtml = `
+        <html>
+        <head>
+            <title>Payment Receipt - Z Typers</title>
+            <style>
+                body {
+                    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                    padding: 40px;
+                    color: #333;
+                    background-color: #fff;
+                }
+                .receipt-container {
+                    max-width: 600px;
+                    margin: 0 auto;
+                    border: 1px solid #e0e0e0;
+                    padding: 30px;
+                    border-radius: 8px;
+                    box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+                }
+                .header {
+                    text-align: center;
+                    border-bottom: 2px solid #7c3aed;
+                    padding-bottom: 20px;
+                    margin-bottom: 30px;
+                }
+                .logo {
+                    font-size: 28px;
+                    font-weight: 800;
+                    color: #7c3aed;
+                    margin-bottom: 5px;
+                }
+                .title {
+                    font-size: 16px;
+                    color: #666;
+                    text-transform: uppercase;
+                    letter-spacing: 1px;
+                }
+                .section {
+                    margin-bottom: 25px;
+                }
+                .section-title {
+                    font-weight: 700;
+                    font-size: 14px;
+                    color: #7c3aed;
+                    border-bottom: 1px solid #f0f0f0;
+                    padding-bottom: 5px;
+                    margin-bottom: 12px;
+                    text-transform: uppercase;
+                }
+                .row {
+                    display: flex;
+                    justify-content: space-between;
+                    margin-bottom: 8px;
+                    font-size: 14px;
+                }
+                .label {
+                    color: #666;
+                }
+                .value {
+                    font-weight: 600;
+                    color: #111;
+                }
+                .value.mono {
+                    font-family: 'Courier New', Courier, monospace;
+                    font-size: 13px;
+                }
+                .total-row {
+                    border-top: 2px dashed #e0e0e0;
+                    padding-top: 15px;
+                    margin-top: 15px;
+                }
+                .total-label {
+                    font-size: 16px;
+                    font-weight: 700;
+                }
+                .total-value {
+                    font-size: 20px;
+                    font-weight: 800;
+                    color: #10b981;
+                }
+                .footer {
+                    text-align: center;
+                    margin-top: 40px;
+                    font-size: 12px;
+                    color: #999;
+                    border-top: 1px solid #f0f0f0;
+                    padding-top: 15px;
+                }
+                .badge {
+                    background-color: #d1fae5;
+                    color: #065f46;
+                    padding: 4px 8px;
+                    border-radius: 4px;
+                    font-size: 12px;
+                    font-weight: 700;
+                    display: inline-block;
+                }
+                @media print {
+                    body { padding: 0; }
+                    .receipt-container { 
+                        border: none; 
+                        box-shadow: none; 
+                        max-width: 100%;
+                    }
+                }
+            </style>
+        </head>
+        <body>
+            <div class="receipt-container">
+                <div class="header">
+                    <div class="logo">⚡ Z TYPERS</div>
+                    <div class="title">Official E-Receipt</div>
+                </div>
+                
+                <div class="section">
+                    <div class="section-title">Receipt Details</div>
+                    <div class="row">
+                        <span class="label">Date & Time</span>
+                        <span class="value">${date}</span>
+                    </div>
+                    <div class="row">
+                        <span class="label">Payment ID</span>
+                        <span class="value mono">${paymentId}</span>
+                    </div>
+                    <div class="row">
+                        <span class="label">Status</span>
+                        <span class="value"><span class="badge">SUCCESSFUL</span></span>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <div class="section-title">User Details</div>
+                    <div class="row">
+                        <span class="label">Name</span>
+                        <span class="value">${name}</span>
+                    </div>
+                    ${email ? `
+                    <div class="row">
+                        <span class="label">Email</span>
+                        <span class="value">${email}</span>
+                    </div>
+                    ` : ''}
+                    ${phone ? `
+                    <div class="row">
+                        <span class="label">Phone</span>
+                        <span class="value">${phone}</span>
+                    </div>
+                    ` : ''}
+                </div>
+
+                <div class="section">
+                    <div class="section-title">Item Details</div>
+                    <div class="row">
+                        <span class="label">Event/Competition</span>
+                        <span class="value">${eventTitle}</span>
+                    </div>
+                    <div class="row">
+                        <span class="label">Description</span>
+                        <span class="value">Event Registration Fee</span>
+                    </div>
+                    
+                    <div class="row total-row">
+                        <span class="total-label">Total Amount Paid</span>
+                        <span class="total-value">₹${amount}</span>
+                    </div>
+                </div>
+
+                <div class="footer">
+                    <p>Thank you for your registration!</p>
+                    <p>This is a computer-generated receipt and does not require a physical signature.</p>
+                    <p>© ${new Date().getFullYear()} Z Typers. All rights reserved.</p>
+                </div>
+            </div>
+            <script>
+                window.onload = function() {
+                    window.print();
+                };
+            </script>
+        </body>
+        </html>
+    `;
+    printWindow.document.write(receiptHtml);
+    printWindow.document.close();
+};
 import usePayment from '../hooks/usePayment';
 
 function getCountdown(dateStr, timeStr) {
@@ -85,8 +277,32 @@ export default function UpcomingEvents() {
             let paymentDocId = null;
             let paymentId = null;
 
-            // If paid event AND payment is configured, process payment first
-            if (isPaid && isPaymentConfigured) {
+            // If paid event, enforce payment gateway configuration
+            if (isPaid) {
+                const instId = event.instituteId || null;
+                let configured = false;
+                try {
+                    if (instId) {
+                        const instDoc = await getDoc(doc(db, `institutes/${instId}`));
+                        if (instDoc.exists()) {
+                            configured = !!instDoc.data().paymentConfigured;
+                        }
+                    } else {
+                        const globalDoc = await getDoc(doc(db, 'appConfig', 'payment'));
+                        if (globalDoc.exists()) {
+                            configured = !!(globalDoc.data().razorpayKey || globalDoc.data().razorpayKeyId);
+                        }
+                    }
+                } catch (configErr) {
+                    console.error('Error verifying payment configuration:', configErr);
+                }
+
+                if (!configured) {
+                    setEnrollMsg('❌ Payment gateway is not configured for this institute. Please contact support.');
+                    setEnrolling(null);
+                    setTimeout(() => setEnrollMsg(''), 5000);
+                    return;
+                }
                 try {
                     const result = await startRazorpayPayment({
                         amount: event.entryFee,
@@ -95,6 +311,7 @@ export default function UpcomingEvents() {
                         prefillEmail: enrollForm.email.trim(),
                         prefillPhone: enrollForm.phone.trim(),
                         metadata: { eventId, eventTitle: event.title, type: 'event_enrollment' },
+                        instituteId: instId,
                     });
                     paymentDocId = result.paymentDocId;
                     paymentId = result.paymentId;
@@ -133,6 +350,9 @@ export default function UpcomingEvents() {
                     eventTitle: event.title,
                     amount: event.entryFee,
                     paymentId,
+                    name: enrollForm.name.trim(),
+                    email: enrollForm.email.trim(),
+                    phone: enrollForm.phone.trim(),
                 });
             }
 
@@ -271,6 +491,9 @@ export default function UpcomingEvents() {
                                 </span>
                             </div>
                         </div>
+                        <button onClick={() => downloadReceipt(paymentSuccess)} className="btn btn-secondary" style={{ width: '100%', padding: '14px', marginBottom: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                            <FiDownload /> Download Receipt
+                        </button>
                         <button onClick={() => setPaymentSuccess(null)} className="btn btn-primary" style={{ width: '100%', padding: '14px' }}>
                             Done
                         </button>

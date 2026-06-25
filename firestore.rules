@@ -87,6 +87,12 @@ service cloud.firestore {
         allow read: if request.auth != null;
         allow write: if request.auth != null;
       }
+
+      // Payments sub-collection — only authenticated admin
+      match /payments/{paymentId} {
+        allow read: if request.auth != null;
+        allow write: if request.auth != null;
+      }
     }
 
     // Student Sessions — for single-device login enforcement
@@ -118,10 +124,20 @@ service cloud.firestore {
       allow write: if false; // Only Cloud Functions can write
     }
 
-    // App Config — superadmin controls
+    // App Config — public read (except private config), superadmin write
     match /appConfig/{configId} {
-      allow read: if true;
+      allow read: if configId != "payment_private";
       allow write: if request.auth != null && request.auth.token.role == "superadmin";
+    }
+
+    // App Config Private — superadmin read/write only
+    match /appConfig/payment_private {
+      allow read, write: if request.auth != null && request.auth.token.role == "superadmin";
+    }
+
+    // Root Payments collection — only authenticated admins
+    match /payments/{paymentId} {
+      allow read, write: if request.auth != null;
     }
   }
 }

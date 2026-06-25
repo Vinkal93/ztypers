@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { db } from '../../lib/firebase';
-import { getFunctions, httpsCallable } from 'firebase/functions';
+import { db, functions } from '../../lib/firebase';
+import { httpsCallable } from 'firebase/functions';
 import { collection, getDocs, onSnapshot, query, where, orderBy, limit as firestoreLimit, doc as fireDoc, setDoc, deleteDoc, updateDoc } from 'firebase/firestore';
 import { useSuperAdmin } from '../../context/SuperAdminContext';
 import {
@@ -13,7 +13,7 @@ import {
     FiDatabase, FiDownload, FiEdit, FiSave, FiMessageSquare,
 } from 'react-icons/fi';
 
-const functions = getFunctions(undefined, 'asia-south1');
+
 
 // ── Theme ─────────────────────────────────────────────────
 const THEMES = {
@@ -131,8 +131,12 @@ export default function SuperAdminDashboard() {
             logs.sort((a, b) => (b.loginAt || '').localeCompare(a.loginAt || ''));
             setSessionLogs(logs.slice(0, 200));
         });
-        // Payment config
+        // Payment config (public)
         const unsubPay = onSnapshot(fireDoc(db, 'appConfig', 'payment'), snap => {
+            if (snap.exists()) setPaymentConfig(prev => ({ ...prev, ...snap.data() }));
+        });
+        // Payment config (private keys)
+        const unsubPayPrivate = onSnapshot(fireDoc(db, 'appConfig', 'payment_private'), snap => {
             if (snap.exists()) setPaymentConfig(prev => ({ ...prev, ...snap.data() }));
         });
         // Site content
@@ -150,7 +154,7 @@ export default function SuperAdminDashboard() {
             setAnnouncements(ann);
         });
 
-        return () => { unsubUsers(); unsubStudents(); unsubEvents(); unsubInst(); unsubPay(); unsubContent(); unsubSettings(); unsubAnn(); };
+        return () => { unsubUsers(); unsubStudents(); unsubEvents(); unsubInst(); unsubPay(); unsubPayPrivate(); unsubContent(); unsubSettings(); unsubAnn(); };
     }, [verified]);
 
     // ── Fetch admin logs via Cloud Function ──
@@ -322,8 +326,22 @@ export default function SuperAdminDashboard() {
     const handleSavePayment = async () => {
         setSavingPayment(true);
         try {
-            await setDoc(fireDoc(db, 'appConfig', 'payment'), { ...paymentConfig, updatedAt: new Date().toISOString() }, { merge: true });
-            setActionMsg({ text: 'Payment settings saved', type: 'success' });
+            // Separate public configuration and secret keys
+            const { razorpaySecret, stripeSecret, razorpayWebhookSecret, ...publicConfig } = paymentConfig;
+
+            await setDoc(fireDoc(db, 'appConfig', 'payment'), { 
+                ...publicConfig, 
+                updatedAt: new Date().toISOString() 
+            }, { merge: true });
+
+            await setDoc(fireDoc(db, 'appConfig', 'payment_private'), { 
+                razorpaySecret: razorpaySecret || '',
+                stripeSecret: stripeSecret || '',
+                razorpayWebhookSecret: razorpayWebhookSecret || '',
+                updatedAt: new Date().toISOString() 
+            }, { merge: true });
+
+            setActionMsg({ text: 'Payment settings saved securely', type: 'success' });
         } catch (e) { setActionMsg({ text: e.message, type: 'error' }); }
         setSavingPayment(false);
     };
@@ -823,6 +841,139 @@ export default function SuperAdminDashboard() {
                                 </div>
                             );
                         })}
+                    </div>
+                )}
+
+                {/* ════════ PAYMENTS ════════ */}
+                {tab === 'payments' && (
+                    <div style={{ display: 'grid', gap: '20px', maxWidth: '600px' }}>
+                        <div style={{
+                            background: t.card, border: `1px solid ${t.cardBorder}`,
+                            borderRadius: '16px', padding: '24px',
+                        }}>
+                            <h3 style={{ fontWeight: 800, fontSize: '16px', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <FiDollarSign size={18} /> Global Payment Settings
+                            </h3>
+                            <p style={{ fontSize: '12px', color: t.textSubtle, marginBottom: '20px' }}>
+                                Configure the global fallback credentials. These are used when an institute doesn't have custom payment configured.
+                            </p>
+
+                            <div style={{ marginBottom: '14px' }}>
+                                <label style={{ fontSize: '11px', fontWeight: 700, color: t.textSubtle, display: 'block', marginBottom: '6px' }}>
+                                    Active Gateway
+                                </label>
+                                <select value={paymentConfig.activeGateway || 'razorpay'} 
+                                    onChange={e => setPaymentConfig(prev => ({ ...prev, activeGateway: e.target.value }))}
+                                    style={{
+                                        width: '100%', padding: '10px 14px', borderRadius: '10px',
+                                        border: `1px solid ${t.cardBorder}`, background: t.inputBg,
+                                        color: t.text, fontSize: '13px', outline: 'none',
+                                    }}>
+                                    <option value="razorpay">Razorpay</option>
+                                    <option value="stripe">Stripe</option>
+                                    <option value="cashfree">Cashfree</option>
+                                    <option value="payu">PayU</option>
+                                </select>
+                            </div>
+
+                            <div style={{ marginBottom: '14px' }}>
+                                <label style={{ fontSize: '11px', fontWeight: 700, color: t.textSubtle, display: 'block', marginBottom: '6px' }}>
+                                    Environment Mode
+                                </label>
+                                <select value={paymentConfig.paymentMode || 'test'} 
+                                    onChange={e => setPaymentConfig(prev => ({ ...prev, paymentMode: e.target.value }))}
+                                    style={{
+                                        width: '100%', padding: '10px 14px', borderRadius: '10px',
+                                        border: `1px solid ${t.cardBorder}`, background: t.inputBg,
+                                        color: t.text, fontSize: '13px', outline: 'none',
+                                    }}>
+                                    <option value="test">🧪 Test Mode</option>
+                                    <option value="live">🟢 Live Mode</option>
+                                </select>
+                            </div>
+
+                            <div style={{ marginBottom: '14px' }}>
+                                <label style={{ fontSize: '11px', fontWeight: 700, color: t.textSubtle, display: 'block', marginBottom: '6px' }}>
+                                    Commission Percent (%)
+                                </label>
+                                <input value={paymentConfig.commissionPercent || '5'} 
+                                    onChange={e => setPaymentConfig(prev => ({ ...prev, commissionPercent: e.target.value }))}
+                                    type="number" placeholder="5"
+                                    style={{
+                                        width: '100%', padding: '10px 14px', borderRadius: '10px',
+                                        border: `1px solid ${t.cardBorder}`, background: t.inputBg,
+                                        color: t.text, fontSize: '13px', outline: 'none', boxSizing: 'border-box',
+                                    }} />
+                            </div>
+
+                            {/* Razorpay Inputs */}
+                            {(paymentConfig.activeGateway === 'razorpay' || !paymentConfig.activeGateway) && (
+                                <div style={{ marginTop: '20px', padding: '16px', background: t.inputBg, borderRadius: '12px', border: `1px solid ${t.rowBorder}` }}>
+                                    <h4 style={{ fontSize: '12px', fontWeight: 800, color: t.textMuted, marginBottom: '12px', textTransform: 'uppercase' }}>Razorpay Config</h4>
+                                    
+                                    <div style={{ marginBottom: '12px' }}>
+                                        <label style={{ fontSize: '11px', fontWeight: 600, color: t.textSubtle, display: 'block', marginBottom: '6px' }}>
+                                            Key ID (Public)
+                                        </label>
+                                        <input value={paymentConfig.razorpayKey || ''} 
+                                            onChange={e => setPaymentConfig(prev => ({ ...prev, razorpayKey: e.target.value }))}
+                                            placeholder="rzp_test_..."
+                                            style={{
+                                                width: '100%', padding: '10px 14px', borderRadius: '10px',
+                                                border: `1px solid ${t.cardBorder}`, background: t.card,
+                                                color: t.text, fontSize: '13px', outline: 'none', boxSizing: 'border-box',
+                                                fontFamily: 'monospace',
+                                            }} />
+                                    </div>
+
+                                    <div style={{ marginBottom: '12px' }}>
+                                        <label style={{ fontSize: '11px', fontWeight: 600, color: t.textSubtle, display: 'block', marginBottom: '6px' }}>
+                                            Key Secret (Private)
+                                        </label>
+                                        <input value={paymentConfig.razorpaySecret || ''} 
+                                            onChange={e => setPaymentConfig(prev => ({ ...prev, razorpaySecret: e.target.value }))}
+                                            type="password" placeholder="Key Secret"
+                                            style={{
+                                                width: '100%', padding: '10px 14px', borderRadius: '10px',
+                                                border: `1px solid ${t.cardBorder}`, background: t.card,
+                                                color: t.text, fontSize: '13px', outline: 'none', boxSizing: 'border-box',
+                                                fontFamily: 'monospace',
+                                            }} />
+                                    </div>
+
+                                    <div style={{ marginBottom: '12px' }}>
+                                        <label style={{ fontSize: '11px', fontWeight: 600, color: t.textSubtle, display: 'block', marginBottom: '6px' }}>
+                                            Webhook Secret
+                                        </label>
+                                        <input value={paymentConfig.razorpayWebhookSecret || ''} 
+                                            onChange={e => setPaymentConfig(prev => ({ ...prev, razorpayWebhookSecret: e.target.value }))}
+                                            type="text" placeholder="Webhook Secret"
+                                            style={{
+                                                width: '100%', padding: '10px 14px', borderRadius: '10px',
+                                                border: `1px solid ${t.cardBorder}`, background: t.card,
+                                                color: t.text, fontSize: '13px', outline: 'none', boxSizing: 'border-box',
+                                                fontFamily: 'monospace',
+                                            }} />
+                                    </div>
+
+                                    <div style={{ fontSize: '11px', color: t.textSubtle, lineHeight: 1.5, background: t.card, padding: '10px', borderRadius: '8px', border: `1px dashed ${t.cardBorder}` }}>
+                                        <span style={{ fontWeight: 700 }}>Global Webhook URL:</span><br />
+                                        <code style={{ color: '#7c3aed', wordBreak: 'break-all', fontFamily: 'monospace' }}>
+                                            https://asia-south1-z-typers.cloudfunctions.net/razorpayWebhook
+                                        </code>
+                                    </div>
+                                </div>
+                            )}
+
+                            <button onClick={handleSavePayment} disabled={savingPayment} style={{
+                                width: '100%', padding: '12px', borderRadius: '10px', border: 'none',
+                                background: 'linear-gradient(135deg, #7c3aed, #3b82f6)',
+                                color: '#fff', fontWeight: 700, fontSize: '13px',
+                                cursor: 'pointer', marginTop: '20px',
+                            }}>
+                                {savingPayment ? '⏳ Saving...' : '💾 Save Settings'}
+                            </button>
+                        </div>
                     </div>
                 )}
 
